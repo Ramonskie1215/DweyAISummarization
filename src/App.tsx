@@ -165,12 +165,19 @@ export default function App() {
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || `Server responded with status ${response.status}`);
+        const errorText = await response.text();
+        let errorMsg = `Server responded with status ${response.status}`;
+        try {
+          const errData = JSON.parse(errorText);
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errorMsg);
       }
 
+      const data = await response.json();
       setSummaryResult(data.summary);
     } catch (err: any) {
       console.error("Summarization failure:", err);

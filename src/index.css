@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (Tailwind v4) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Markdown Container Typographic Styles */
 #markdown-container h1 {
   font-size: 1.5rem;
@@ -109,3 +112,16 @@
   color: #4b5563;
 }
 
+
+/* Markdown Container — dark mode overrides */
+.dark #markdown-container h1 { color: #f9fafb; border-bottom-color: #374151; }
+.dark #markdown-container h2 { color: #f3f4f6; }
+.dark #markdown-container h3 { color: #e5e7eb; }
+.dark #markdown-container p,
+.dark #markdown-container li { color: #d1d5db; }
+.dark #markdown-container strong { color: #f9fafb; }
+.dark #markdown-container blockquote { border-left-color: #374151; color: #9ca3af; }
+.dark #markdown-container code { background-color: #1f2937; color: #e5e7eb; }
+.dark #markdown-container pre { background-color: #111827; }
+.dark #markdown-container th { background-color: #1f2937; color: #e5e7eb; border-bottom-color: #374151; }
+.dark #markdown-container td { color: #d1d5db; border-bottom-color: #374151; }

@@ -2,5 +2,5 @@
   "name": "PDF Extractor & Summarizer",
   "description": "Upload any PDF, instantly extract its text, and generate beautifully formatted, structured summaries using Step-3.7-Flash AI.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

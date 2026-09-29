@@ -36,8 +36,6 @@ export default function App() {
   const [extractionError, setExtractionError] = useState<string | null>(null);
 
   // AI Summarization options and states
-  const [model, setModel] = useState("deepseek/deepseek-v4-flash-free");
-  const [showCustomModelInput, setShowCustomModelInput] = useState(false);
   const [summaryLength, setSummaryLength] = useState<"Short" | "Medium" | "Detailed">("Medium");
   const [summaryStyle, setSummaryStyle] = useState<string>("Professional");
   const [customInstructions, setCustomInstructions] = useState("");
@@ -172,7 +170,6 @@ export default function App() {
         },
         body: JSON.stringify({
           text: extractionResult.text,
-          model: model,
           length: summaryLength,
           style: summaryStyle,
           prompt: customInstructions.trim() ? customInstructions : undefined
@@ -283,7 +280,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100" id="header-title">PDF Extractor & Summarizer</h1>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400" id="header-subtitle">Extract text and summarize instantly with Step-3.7-Flash AI</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400" id="header-subtitle">Extract text and summarize instantly with AI</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -297,7 +294,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-full text-xs font-semibold border border-neutral-200 dark:border-neutral-800">
             <Sparkles className="w-3.5 h-3.5 text-neutral-800 dark:text-neutral-200" />
-            <span>AI Provider: StepFun (step-3.7-flash)</span>
+            <span>AI-powered</span>
           </div>
         </div>
       </header>
@@ -430,54 +427,6 @@ export default function App() {
               <Settings className="w-4 h-4" />
               <span>AI Summary Settings</span>
             </h2>
-
-            {/* Model Select */}
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider mb-2">
-                LLM Model
-              </label>
-              {!showCustomModelInput ? (
-                <div className="flex gap-2">
-                  <select
-                    value={model}
-                    onChange={(e) => {
-                      if (e.target.value === "custom") {
-                        setShowCustomModelInput(true);
-                        setModel("");
-                      } else {
-                        setModel(e.target.value);
-                      }
-                    }}
-                    className="flex-1 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-neutral-900 cursor-pointer"
-                    id="model-selector"
-                  >
-                    <option value="deepseek/deepseek-v4-flash-free">deepseek-v4-flash-free (Recommended)</option>
-                    <option value="deepseek/deepseek-chat">deepseek-chat</option>
-                    <option value="custom">Enter custom model...</option>
-                  </select>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder="e.g. deepseek/deepseek-v4-flash-free"
-                    className="flex-1 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-neutral-900"
-                    id="custom-model-input"
-                  />
-                  <button
-                    onClick={() => {
-                      setShowCustomModelInput(false);
-                      setModel("deepseek/deepseek-v4-flash-free");
-                    }}
-                    className="px-3 py-2 border border-neutral-200 dark:border-neutral-800 rounded-lg text-xs hover:bg-neutral-100 transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-              )}
-            </div>
 
             {/* Summary Length Selector */}
             <div className="mb-4">

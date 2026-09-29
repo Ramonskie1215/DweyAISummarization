@@ -38,6 +38,7 @@ export default function App() {
   // AI Summarization options and states
   const [summaryLength, setSummaryLength] = useState<"Short" | "Medium" | "Detailed">("Medium");
   const [summaryStyle, setSummaryStyle] = useState<string>("Professional");
+  const [summaryLanguage, setSummaryLanguage] = useState<"en" | "tl">("en");
   const [customInstructions, setCustomInstructions] = useState("");
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryResult, setSummaryResult] = useState<string | null>(null);
@@ -172,6 +173,7 @@ export default function App() {
           text: extractionResult.text,
           length: summaryLength,
           style: summaryStyle,
+          language: summaryLanguage,
           prompt: customInstructions.trim() ? customInstructions : undefined
         }),
       });
@@ -445,6 +447,28 @@ export default function App() {
                     }`}
                   >
                     {len}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary Language Selector */}
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider mb-2">
+                Summary Language
+              </label>
+              <div className="grid grid-cols-2 gap-2" id="language-radio-group">
+                {([{ code: "en", label: "English" }, { code: "tl", label: "Tagalog" }] as const).map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => setSummaryLanguage(lang.code)}
+                    className={`py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      summaryLanguage === lang.code
+                        ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-neutral-900 dark:border-neutral-100"
+                        : "bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-800 hover:border-neutral-300"
+                    }`}
+                  >
+                    {lang.label}
                   </button>
                 ))}
               </div>

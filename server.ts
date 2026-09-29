@@ -21,7 +21,7 @@ async function startServer() {
   // Secure API Proxy endpoint to process text with deepseek/deepseek-v4-flash-free on api.apmix.ai
   app.post("/api/summarize", async (req, res) => {
     try {
-      const { text, model, prompt, length, style } = req.body;
+      const { text, model, prompt, length, style, language } = req.body;
       if (!text || typeof text !== "string" || text.trim() === "") {
         return res.status(400).json({ error: "Text content is required for summarization." });
       }
@@ -35,7 +35,7 @@ async function startServer() {
 
       const systemPrompt = "You are an expert document assistant. You analyze extracted PDF text and produce beautifully formatted, highly informative summaries using clear Markdown hierarchy. Focus on accuracy and structure.";
       
-      const userPrompt = prompt || `You are given a text extracted from a PDF. Please read it thoroughly and produce a highly professional, beautifully structured markdown summary.
+      const basePrompt = prompt || `You are given a text extracted from a PDF. Please read it thoroughly and produce a highly professional, beautifully structured markdown summary.
 
 Please follow these exact requirements:
 - **Summary Length**: ${summaryLengthText} (Please adapt details accordingly)
@@ -46,6 +46,9 @@ Text to analyze and summarize:
 --------------------------------------
 ${text}
 --------------------------------------`;
+
+      const summaryLanguageText = language === "tl" ? "Tagalog" : "English";
+      const userPrompt = `${basePrompt}\n\nIMPORTANT: Write the entire summary in ${summaryLanguageText}.`;
 
       const apiKey = process.env.APMIX_API_KEY || "apx_live_XuemnuQhPPjDoWqkq19wVTgM1Z2AvUIqWxALwjQM";
 

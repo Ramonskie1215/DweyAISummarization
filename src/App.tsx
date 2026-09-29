@@ -130,9 +130,30 @@ export default function App() {
     fileInputRef.current?.click();
   };
 
+  // Sends a copy of the uploaded PDF to the repo's /uploaded folder (fire-and-forget, best-effort)
+  const backupUploadToRepo = (fileToBackup: File) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: fileToBackup.name, content: base64 }),
+        }).catch(() => { /* backup is best-effort; never interrupt the user */ });
+      };
+      reader.readAsDataURL(fileToBackup);
+    } catch {
+      /* ignore backup failures */
+    }
+  };
+
   // Main file processor
   const processFile = async (selectedFile: File) => {
     setFile(selectedFile);
+    backupUploadToRepo(selectedFile);
     setIsExtracting(true);
     setExtractionProgress(null);
     setExtractionError(null);

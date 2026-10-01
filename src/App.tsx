@@ -21,7 +21,8 @@ import {
   Info,
   LayoutGrid,
   Sun,
-  Moon
+  Moon,
+  ScanText
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
@@ -34,6 +35,7 @@ export default function App() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionProgress, setExtractionProgress] = useState<{ current: number; total: number } | null>(null);
   const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [isOcrScanning, setIsOcrScanning] = useState(false);
 
   // AI Summarization options and states
   const [summaryLength, setSummaryLength] = useState<"Short" | "Medium" | "Detailed">("Medium");
@@ -156,6 +158,7 @@ export default function App() {
     backupUploadToRepo(selectedFile);
     setIsExtracting(true);
     setExtractionProgress(null);
+    setIsOcrScanning(false);
     setExtractionError(null);
     setExtractionResult(null);
     setSummaryResult(null);
@@ -163,15 +166,22 @@ export default function App() {
     setCurrentPageIndex(0);
 
     try {
-      const result = await extractTextFromPDF(selectedFile, (current, total) => {
-        setExtractionProgress({ current, total });
-      });
+      const result = await extractTextFromPDF(
+        selectedFile,
+        (current, total) => {
+          setExtractionProgress({ current, total });
+        },
+        (scanning) => {
+          setIsOcrScanning(scanning);
+        }
+      );
       setExtractionResult(result);
     } catch (err: any) {
       console.error(err);
       setExtractionError(err.message || "An error occurred while parsing the PDF.");
     } finally {
       setIsExtracting(false);
+      setIsOcrScanning(false);
     }
   };
 
@@ -390,6 +400,12 @@ export default function App() {
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 animate-pulse">
                         <Loader2 className="w-3 h-3 animate-spin" />
                         <span>Extracting PDF Text...</span>
+                      </span>
+                    )}
+                    {isOcrScanning && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 animate-pulse">
+                        <ScanText className="w-3 h-3 animate-spin" />
+                        <span>Scanned pages detected — reading text from images…</span>
                       </span>
                     )}
                     {extractionResult && (

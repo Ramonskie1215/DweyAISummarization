@@ -1,20 +1,18 @@
-import { createWorker } from "tesseract.js";
-
 // Pages with less extractable text than this are treated as image-only (scanned)
 // and fall back to OCR.
 const OCR_TEXT_THRESHOLD = 30;
-// Render scale used when rasterizing pages for OCR (higher = sharper, slower).
-const OCR_RENDER_SCALE = 2;
 
 /**
  * Renders a PDF.js page to a canvas so Tesseract can OCR it.
  */
 async function renderPageToCanvas(page: any): Promise<HTMLCanvasElement> {
-  const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+  const baseViewport = page.getViewport({ scale: 1 });
+  const scale = Math.min(4, (1400 / baseViewport.width) * 2);
+  const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
     throw new Error("Canvas 2D context is not available");
   }
@@ -57,7 +55,8 @@ export interface PDFParseResult {
 export async function extractTextFromPDF(
   file: File,
   onProgress?: (current: number, total: number) => void,
-  onOcrStatus?: (scanning: boolean) => void
+  onOcrStatus?: (scanning: boolean) => void,
+  onOcrProgress?: (page: number, total: number, progress: number) => void
 ): Promise<PDFParseResult> {
   const pdfjsLib = (window as any).pdfjsLib;
   if (!pdfjsLib) {
@@ -125,7 +124,17 @@ export async function extractTextFromPDF(
           if (pageText.length < OCR_TEXT_THRESHOLD) {
             try {
               if (!ocrWorker) {
-                ocrWorker = await createWorker(["eng", "tgl"]);
+                const Tesseract = (window as any).Tesseract;
+                if (!Tesseract || !Tesseract.createWorker) {
+                  throw new Error("Tesseract.js failed to load from CDN");
+                }
+                ocrWorker = await Tesseract.createWorker(["eng", "tgl"], 1, {
+                  logger: (m: any) => {
+                    if (m.status === "recognizing text" && onOcrProgress) {
+                      onOcrProgress(i, pagesCount, m.progress || 0);
+                    }
+                  },
+                });
                 ocrWasUsed = true;
                 if (onOcrStatus) onOcrStatus(true);
               }

@@ -1,3 +1,27 @@
+import { createWorker } from "tesseract.js";
+
+// Pages with less extractable text than this are treated as image-only (scanned)
+// and fall back to OCR.
+const OCR_TEXT_THRESHOLD = 30;
+// Render scale used when rasterizing pages for OCR (higher = sharper, slower).
+const OCR_RENDER_SCALE = 2;
+
+/**
+ * Renders a PDF.js page to a canvas so Tesseract can OCR it.
+ */
+async function renderPageToCanvas(page: any): Promise<HTMLCanvasElement> {
+  const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas 2D context is not available");
+  }
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
 export interface PDFTextItem {
   str: string;
   x: number;      // X coordinate from left
@@ -32,7 +56,8 @@ export interface PDFParseResult {
  */
 export async function extractTextFromPDF(
   file: File,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  onOcrStatus?: (scanning: boolean) => void
 ): Promise<PDFParseResult> {
   const pdfjsLib = (window as any).pdfjsLib;
   if (!pdfjsLib) {
@@ -74,6 +99,10 @@ export async function extractTextFromPDF(
           console.warn("Could not load PDF document metadata:", metaError);
         }
 
+        // Lazily-created Tesseract worker, reused across pages that need OCR
+        let ocrWorker: any = null;
+        let ocrWasUsed = false;
+
         // Loop through and extract text page by page
         for (let i = 1; i <= pagesCount; i++) {
           const page = await pdf.getPage(i);
@@ -90,8 +119,29 @@ export async function extractTextFromPDF(
             .replace(/\s+/g, " ") // Clean up excess spacing
             .trim();
           
-          pages.push(pageText);
-          fullText += `--- Page ${i} ---\n${pageText}\n\n`;
+          let finalPageText = pageText;
+
+          // Image-only (scanned) page: little or no extractable text -> fall back to OCR
+          if (pageText.length < OCR_TEXT_THRESHOLD) {
+            try {
+              if (!ocrWorker) {
+                ocrWorker = await createWorker(["eng", "tgl"]);
+                ocrWasUsed = true;
+                if (onOcrStatus) onOcrStatus(true);
+              }
+              const canvas = await renderPageToCanvas(page);
+              const { data: { text: ocrText } } = await ocrWorker.recognize(canvas);
+              const cleanOcrText = (ocrText || "").replace(/\s+/g, " ").trim();
+              if (cleanOcrText.length >= finalPageText.length) {
+                finalPageText = cleanOcrText;
+              }
+            } catch (ocrError) {
+              console.warn(`OCR fallback failed for page ${i}:`, ocrError);
+            }
+          }
+
+          pages.push(finalPageText);
+          fullText += `--- Page ${i} ---\n${finalPageText}\n\n`;
 
           // Process coordinate layout items
           const layoutItems: PDFTextItem[] = textContent.items
@@ -134,6 +184,15 @@ export async function extractTextFromPDF(
         });
       } catch (error: any) {
         reject(new Error(`PDF extraction failed: ${error.message || error}`));
+      } finally {
+        if (ocrWorker) {
+          const workerToStop = ocrWorker;
+          ocrWorker = null;
+          workerToStop.terminate().catch(() => {});
+        }
+        if (ocrWasUsed && onOcrStatus) {
+          onOcrStatus(false);
+        }
       }
     };
 

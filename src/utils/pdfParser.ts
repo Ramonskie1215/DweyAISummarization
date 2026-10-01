@@ -129,6 +129,9 @@ export async function extractTextFromPDF(
                   throw new Error("Tesseract.js failed to load from CDN");
                 }
                 ocrWorker = await Tesseract.createWorker(["eng", "tgl"], 1, {
+                  // tgl has no "_best_int" traineddata on the CDN (404); use the
+                  // standard 4.0.0 files instead so Tagalog loads correctly.
+                  legacyLang: true,
                   logger: (m: any) => {
                     if (m.status === "recognizing text" && onOcrProgress) {
                       onOcrProgress(i, pagesCount, m.progress || 0);

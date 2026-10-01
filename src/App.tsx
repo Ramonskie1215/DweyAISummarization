@@ -173,6 +173,9 @@ export default function App() {
         },
         (scanning) => {
           setIsOcrScanning(scanning);
+        },
+        (page, total, progress) => {
+          setExtractionProgress({ current: page - 1 + progress, total });
         }
       );
       setExtractionResult(result);
@@ -431,7 +434,7 @@ export default function App() {
                 >
                   <div className="flex justify-between items-center text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">
                     <span>Processing page text...</span>
-                    <span>{extractionProgress.current} / {extractionProgress.total}</span>
+                    <span>{Math.floor(extractionProgress.current)} / {extractionProgress.total}</span>
                   </div>
                   <div className="w-full bg-neutral-100 dark:bg-neutral-800 rounded-full h-2 overflow-hidden">
                     <div 

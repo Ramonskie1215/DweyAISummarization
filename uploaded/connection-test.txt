@@ -1,1 +1,0 @@
-Connection test for the /uploaded backup feature. Created by Muse to verify the upload path; removed right after.

@@ -42,7 +42,7 @@ export default function App() {
   const [docSelectionAnchor, setDocSelectionAnchor] = useState<number | null>(null);
   const [docSelectionEnd, setDocSelectionEnd] = useState<number | null>(null);
   const [copiedDocSelection, setCopiedDocSelection] = useState(false);
-  const [adminMode, setAdminMode] = useState(false);
+  const [appView, setAppView] = useState<"files" | "upload">("files");
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -337,10 +337,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (adminMode) {
+    if (appView === "files") {
       fetchAdminFiles();
     }
-  }, [adminMode]);
+  }, [appView]);
 
   // Summarize action
   const handleSummarize = async () => {
@@ -474,6 +474,16 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {appView === "upload" && (
+            <button
+              onClick={() => setAppView("files")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all"
+              id="back-to-files-btn"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Uploaded Files</span>
+            </button>
+          )}
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className="p-2 rounded-full border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
@@ -490,6 +500,77 @@ export default function App() {
       </header>
 
       {/* MAIN LAYOUT */}
+      {appView === "files" ? (
+        <main id="files-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="uploaded-files-panel">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
+                  <FolderOpen className="w-4 h-4" />
+                  <span>Uploaded Files</span>
+                </h2>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Backup copies of every uploaded PDF, stored in the repository's /uploaded folder.</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={fetchAdminFiles}
+                  disabled={adminLoading}
+                  className="p-2 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-all"
+                  title="Refresh file list"
+                >
+                  <RefreshCw className={`w-4 h-4 ${adminLoading ? "animate-spin" : ""}`} />
+                </button>
+                <button
+                  onClick={() => setAppView("upload")}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
+                  id="open-upload-ui-btn"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Upload File</span>
+                </button>
+              </div>
+            </div>
+
+            {adminLoading ? (
+              <div className="flex-1 flex items-center justify-center p-12 text-neutral-400 dark:text-neutral-500">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : adminError ? (
+              <div className="p-6">
+                <div className="flex items-start gap-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-4 text-sm text-red-700 dark:text-red-300">
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <span>{adminError}</span>
+                </div>
+              </div>
+            ) : adminFiles.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-12 text-neutral-400 dark:text-neutral-500">
+                <FolderOpen className="w-10 h-10 mb-3" />
+                <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">No files yet</p>
+                <p className="text-xs mt-1">Uploaded PDFs will appear here as backup copies.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-auto flex-1">
+                {adminFiles.map((f) => (
+                  <li key={f.path} className="flex items-center gap-3 px-5 py-3">
+                    <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
+                      <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate">{f.path}</p>
+                    </div>
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-400 dark:text-neutral-500">
+              {adminFiles.length} file{adminFiles.length === 1 ? "" : "s"} in /uploaded
+            </div>
+          </div>
+        </main>
+      ) : (
       <main id="app-main-content" className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* LEFT COLUMN: UPLOAD & CONTROLS (12 columns on mobile, 5 on lg) */}
@@ -497,25 +578,10 @@ export default function App() {
           
           {/* FILE UPLOAD CARD */}
           <div id="upload-card" className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
-                <FileUp className="w-4 h-4" />
-                <span>Document Upload</span>
-              </h2>
-              <button
-                onClick={() => setAdminMode((prev) => !prev)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all ${
-                  adminMode
-                    ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-neutral-900 dark:border-neutral-100"
-                    : "bg-white dark:bg-neutral-900 text-neutral-500 dark:text-neutral-400 border-neutral-200 dark:border-neutral-800 hover:text-neutral-800 dark:hover:text-neutral-200"
-                }`}
-                id="admin-mode-toggle"
-                title="Toggle Admin Mode"
-              >
-                <FolderOpen className="w-3.5 h-3.5" />
-                <span>Admin Mode</span>
-              </button>
-            </div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-4 flex items-center gap-2">
+              <FileUp className="w-4 h-4" />
+              <span>Document Upload</span>
+            </h2>
 
             {!file ? (
               <div
@@ -766,66 +832,6 @@ export default function App() {
 
         {/* RIGHT COLUMN: WORKSPACE & RENDERING (7 columns on lg) */}
         <div id="right-column" className="lg:col-span-7 flex flex-col w-full h-full lg:min-h-[640px]">
-          {adminMode ? (
-            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="admin-panel">
-              <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
-                <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
-                    <FolderOpen className="w-4 h-4" />
-                    <span>Uploaded Files</span>
-                  </h2>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Backup copies stored in the repository's /uploaded folder.</p>
-                </div>
-                <button
-                  onClick={fetchAdminFiles}
-                  disabled={adminLoading}
-                  className="p-2 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-all shrink-0"
-                  title="Refresh file list"
-                >
-                  <RefreshCw className={`w-4 h-4 ${adminLoading ? "animate-spin" : ""}`} />
-                </button>
-              </div>
-
-              {adminLoading ? (
-                <div className="flex-1 flex items-center justify-center p-12 text-neutral-400 dark:text-neutral-500">
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                </div>
-              ) : adminError ? (
-                <div className="p-6">
-                  <div className="flex items-start gap-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-4 text-sm text-red-700 dark:text-red-300">
-                    <AlertCircle className="w-5 h-5 shrink-0" />
-                    <span>{adminError}</span>
-                  </div>
-                </div>
-              ) : adminFiles.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-12 text-neutral-400 dark:text-neutral-500">
-                  <FolderOpen className="w-10 h-10 mb-3" />
-                  <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">No files yet</p>
-                  <p className="text-xs mt-1">Uploaded PDFs will appear here as backup copies.</p>
-                </div>
-              ) : (
-                <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-auto flex-1">
-                  {adminFiles.map((f) => (
-                    <li key={f.path} className="flex items-center gap-3 px-5 py-3">
-                      <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
-                        <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
-                        <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate">{f.path}</p>
-                      </div>
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-400 dark:text-neutral-500">
-                {adminFiles.length} file{adminFiles.length === 1 ? "" : "s"} in /uploaded
-              </div>
-            </div>
-          ) : (
-            <>
 
           {/* VIEW TAB HEADERS */}
           <div id="tab-headers-container" className="flex border-b border-neutral-200 dark:border-neutral-800 mb-4 bg-white dark:bg-neutral-900 rounded-lg p-1 border">
@@ -1355,10 +1361,9 @@ export default function App() {
               </div>
             )}
           </div>
-            </>
-          )}
         </div>
       </main>
+      )}
 
       {/* FOOTER */}
       <footer id="app-footer" className="bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 py-6 px-6 md:px-12 mt-12 shrink-0 text-center sm:text-left">

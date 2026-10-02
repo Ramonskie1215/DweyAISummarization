@@ -25,7 +25,8 @@ import {
   ScanText,
   FolderOpen,
   User,
-  KeyRound
+  KeyRound,
+  Users
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
@@ -51,6 +52,15 @@ export default function App() {
   });
   const [roomCode, setRoomCode] = useState("");
   const [isRoomCodeModalOpen, setIsRoomCodeModalOpen] = useState(false);
+  const [selectedRoomFilePaths, setSelectedRoomFilePaths] = useState<string[]>([]);
+  const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);
+  const [isHostingRoom, setIsHostingRoom] = useState(false);
+  const [hostRoomError, setHostRoomError] = useState<string | null>(null);
+  const [hostedRoom, setHostedRoom] = useState<{ code: string; createdAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
+  const [copiedRoomCode, setCopiedRoomCode] = useState(false);
+  const [guestRoom, setGuestRoom] = useState<{ code: string; createdAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
+  const [joinRoomError, setJoinRoomError] = useState<string | null>(null);
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -368,6 +378,96 @@ export default function App() {
     }
   }, [appView]);
 
+  const toggleRoomFileSelection = (path: string) => {
+    setSelectedRoomFilePaths((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]));
+  };
+
+  const startHostingRoom = () => {
+    setHostedRoom(null);
+    setHostRoomError(null);
+    setCopiedRoomCode(false);
+    setIsSelectingRoomFiles(true);
+  };
+
+  const cancelHostingRoom = () => {
+    setIsSelectingRoomFiles(false);
+    setSelectedRoomFilePaths([]);
+    setHostRoomError(null);
+  };
+
+  const createHostedRoom = async () => {
+    const files = adminFiles.filter((f) => selectedRoomFilePaths.includes(f.path));
+    if (files.length === 0) {
+      setHostRoomError("Select at least one file for the room.");
+      return;
+    }
+    setIsHostingRoom(true);
+    setHostRoomError(null);
+    try {
+      const res = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+      setHostedRoom({ code: String(data.code), createdAt: data.createdAt || null, files: Array.isArray(data.files) ? data.files : files });
+      setIsSelectingRoomFiles(false);
+      setSelectedRoomFilePaths([]);
+    } catch (err: any) {
+      console.error("Failed to host room:", err);
+      setHostRoomError(err.message || "Could not create the room.");
+    } finally {
+      setIsHostingRoom(false);
+    }
+  };
+
+  const copyHostedRoomCode = async () => {
+    if (!hostedRoom?.code) return;
+    try {
+      await navigator.clipboard.writeText(hostedRoom.code);
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = hostedRoom.code;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (__) {}
+      document.body.removeChild(ta);
+    }
+    setCopiedRoomCode(true);
+    setTimeout(() => setCopiedRoomCode(false), 2000);
+  };
+
+  const joinGuestRoom = async () => {
+    const code = roomCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setJoinRoomError("Enter a valid 6-digit room code.");
+      return;
+    }
+    setIsJoiningRoom(true);
+    setJoinRoomError(null);
+    try {
+      const res = await fetch(`/api/rooms?code=${encodeURIComponent(code)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+      setGuestRoom({ code: String(data.code || code), createdAt: data.createdAt || null, files: Array.isArray(data.files) ? data.files : [] });
+      setIsRoomCodeModalOpen(false);
+    } catch (err: any) {
+      console.error("Failed to join room:", err);
+      setGuestRoom(null);
+      setJoinRoomError(err.message || "Could not open that room.");
+    } finally {
+      setIsJoiningRoom(false);
+    }
+  };
+
+  const leaveGuestRoom = () => {
+    setGuestRoom(null);
+    setRoomCode("");
+    setJoinRoomError(null);
+    setIsRoomCodeModalOpen(false);
+  };
+
   // Summarize action
   const handleSummarize = async () => {
     if (!extractionResult) return;
@@ -547,17 +647,76 @@ export default function App() {
       {/* MAIN LAYOUT */}
       {profileRole === "Guest" ? (
         <>
-          <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center p-8">
-            <button
-              type="button"
-              onClick={() => setIsRoomCodeModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
-              id="open-room-code-modal-btn"
-            >
-              <KeyRound className="w-4 h-4" />
-              <span>Enter Room Code</span>
-            </button>
-          </main>
+          {guestRoom ? (
+            <main id="guest-room-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
+              <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="guest-room-panel">
+                <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
+                      <KeyRound className="w-4 h-4" />
+                      <span>Room {guestRoom.code}</span>
+                    </h2>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Files shared in this room.</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => { setRoomCode(""); setJoinRoomError(null); setIsRoomCodeModalOpen(true); }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all"
+                      id="guest-enter-another-code-btn"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Enter Another Code</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={leaveGuestRoom}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
+                      id="leave-guest-room-btn"
+                    >
+                      <span>Leave Room</span>
+                    </button>
+                  </div>
+                </div>
+                {guestRoom.files.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 text-neutral-400 dark:text-neutral-500">
+                    <FolderOpen className="w-10 h-10 mb-3" />
+                    <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">No files in this room</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-auto flex-1" id="guest-room-files-list">
+                    {guestRoom.files.map((f) => (
+                      <li key={f.path} className="flex items-center gap-3 px-5 py-3">
+                        <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
+                          <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
+                          <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
+                        </div>
+                        <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-400 dark:text-neutral-500">
+                  {guestRoom.files.length} file{guestRoom.files.length === 1 ? "" : "s"} in Room {guestRoom.code}
+                </div>
+              </div>
+            </main>
+          ) : (
+            <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center p-8">
+              <button
+                type="button"
+                onClick={() => { setJoinRoomError(null); setIsRoomCodeModalOpen(true); }}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+                id="open-room-code-modal-btn"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>Enter Room Code</span>
+              </button>
+            </main>
+          )}
           {isRoomCodeModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-4" id="guest-room-code-overlay">
             <div
@@ -594,20 +753,30 @@ export default function App() {
                 autoFocus
                 maxLength={6}
                 value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(e) => { setRoomCode(e.target.value.replace(/\D/g, "").slice(0, 6)); if (joinRoomError) setJoinRoomError(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && roomCode.length === 6 && !isJoiningRoom) joinGuestRoom(); }}
                 placeholder="000000"
                 aria-describedby="room-code-hint"
                 className="w-full border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 rounded-lg px-3 py-3 text-center text-lg font-mono font-semibold tracking-[0.5em] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-300 dark:placeholder:text-neutral-700 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300"
               />
               <p id="room-code-hint" className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-2 text-right">{roomCode.length}/6</p>
 
+              {joinRoomError && (
+                <div className="mt-3 flex items-start gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-3 text-xs text-red-700 dark:text-red-300" id="join-room-error">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{joinRoomError}</span>
+                </div>
+              )}
+
               <button
                 type="button"
-                disabled={roomCode.length !== 6}
-                className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                onClick={joinGuestRoom}
+                disabled={roomCode.length !== 6 || isJoiningRoom}
+                className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                 id="enter-room-code-btn"
               >
-                Enter
+                {isJoiningRoom ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <span>{isJoiningRoom ? "Opening room..." : "Enter"}</span>
               </button>
               <button
                 type="button"
@@ -643,6 +812,15 @@ export default function App() {
                   <RefreshCw className={`w-4 h-4 ${adminLoading ? "animate-spin" : ""}`} />
                 </button>
                 <button
+                  onClick={startHostingRoom}
+                  disabled={adminLoading || adminFiles.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-all"
+                  id="host-room-btn"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Host Room</span>
+                </button>
+                <button
                   onClick={() => setAppView("upload")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
                   id="open-upload-ui-btn"
@@ -652,6 +830,71 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {isSelectingRoomFiles && (
+              <div id="host-room-selection-bar" className="px-5 py-3 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Select files for this room</p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{selectedRoomFilePaths.length} selected — guests with the room code will see only these files.</p>
+                  {hostRoomError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{hostRoomError}</p>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={cancelHostingRoom}
+                    disabled={isHostingRoom}
+                    className="px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:bg-white dark:hover:bg-neutral-900 disabled:opacity-40 transition-all"
+                    id="cancel-host-room-btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createHostedRoom}
+                    disabled={selectedRoomFilePaths.length === 0 || isHostingRoom}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold disabled:opacity-40 hover:opacity-90 transition-opacity"
+                    id="create-room-btn"
+                  >
+                    {isHostingRoom ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    <span>{isHostingRoom ? "Creating..." : "Create Room"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {hostedRoom && (
+              <div id="hosted-room-panel" className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 bg-emerald-50 dark:bg-emerald-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg shrink-0">
+                    <CheckCircle className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">Room is ready — share this code with guests</p>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className="text-2xl font-mono font-bold tracking-[0.3em] text-neutral-900 dark:text-neutral-100" id="hosted-room-code">{hostedRoom.code}</span>
+                      <button
+                        type="button"
+                        onClick={copyHostedRoomCode}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-white dark:bg-neutral-900 border border-emerald-200 dark:border-emerald-900 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                        id="copy-room-code-btn"
+                      >
+                        {copiedRoomCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedRoomCode ? "Copied!" : "Copy"}</span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">{hostedRoom.files.length} file{hostedRoom.files.length === 1 ? "" : "s"} in this room</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHostedRoom(null)}
+                  className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-900 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors shrink-0"
+                  id="close-hosted-room-panel-btn"
+                >
+                  Done
+                </button>
+              </div>
+            )}
 
             {adminLoading ? (
               <div className="flex-1 flex items-center justify-center p-12 text-neutral-400 dark:text-neutral-500">
@@ -673,7 +916,17 @@ export default function App() {
             ) : (
               <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-auto flex-1">
                 {adminFiles.map((f) => (
-                  <li key={f.path} className="flex items-center gap-3 px-5 py-3">
+                  <li key={f.path} className={`flex items-center gap-3 px-5 py-3 ${isSelectingRoomFiles && selectedRoomFilePaths.includes(f.path) ? "bg-neutral-50 dark:bg-neutral-950" : ""}`}>
+                    {isSelectingRoomFiles && (
+                      <input
+                        type="checkbox"
+                        checked={selectedRoomFilePaths.includes(f.path)}
+                        onChange={() => toggleRoomFileSelection(f.path)}
+                        className="w-4 h-4 shrink-0 accent-neutral-900 dark:accent-neutral-100 cursor-pointer"
+                        aria-label={`Select ${f.name} for room`}
+                        id={`room-file-checkbox-${f.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+                      />
+                    )}
                     <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
                       <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
                     </div>

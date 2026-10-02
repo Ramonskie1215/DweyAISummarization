@@ -51,7 +51,7 @@ function normalizeFiles(input: any) {
     if (!path || typeof path !== "string") continue;
     const cleanPath = path.trim();
     if (!cleanPath.startsWith("uploaded/")) continue;
-    if (cleanPath.endsWith(".summary.json") || cleanPath.endsWith(".summary.md")) continue;
+    if (cleanPath.endsWith(".summary.json") || cleanPath.endsWith(".summary.md") || cleanPath.endsWith(".traces.json")) continue;
     if (seen.has(cleanPath)) continue;
     seen.add(cleanPath);
     const name = (typeof item === "object" && item?.name) || cleanPath.split("/").pop() || cleanPath;

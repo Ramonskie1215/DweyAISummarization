@@ -1126,9 +1126,7 @@ export default function App() {
                             <span className="text-neutral-800 dark:text-neutral-200 font-medium truncate">
                               {extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem].str}
                             </span>
-                          ) : (
-                            <span className="text-neutral-400 dark:text-neutral-500 italic truncate">Hover to highlight text. Double-click a word, then double-click another to select everything in between.</span>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="flex-1 bg-neutral-200/50 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 flex justify-center items-start overflow-auto min-h-[400px]">

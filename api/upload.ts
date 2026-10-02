@@ -28,7 +28,7 @@ async function listUploadedFiles(ghOwner: string, ghRepo: string, ghHeaders: Rec
   );
   const all = [...topLevel, ...dirFiles.flat()];
   return all
-    .filter((it: any) => it && it.type === "file" && !String(it.name || "").endsWith(".summary.json") && !String(it.name || "").endsWith(".summary.md"))
+    .filter((it: any) => it && it.type === "file" && !String(it.name || "").endsWith(".summary.json") && !String(it.name || "").endsWith(".summary.md") && !String(it.name || "").endsWith(".traces.json"))
     .map((it: any) => ({
       name: it.name,
       size: it.size,

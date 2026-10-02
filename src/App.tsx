@@ -51,7 +51,7 @@ export default function App() {
   });
   const [roomCode, setRoomCode] = useState("");
   const [isRoomCodeModalOpen, setIsRoomCodeModalOpen] = useState(false);
-  const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string }>>([]);
+  const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
 
@@ -323,6 +323,19 @@ export default function App() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const formatUploadedDateTime = (value?: string | null) => {
+    if (!value) return "Date unavailable";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Date unavailable";
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
   };
 
   const fetchAdminFiles = async () => {
@@ -666,7 +679,7 @@ export default function App() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
-                      <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate">{f.path}</p>
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
                     </div>
                     <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
                   </li>

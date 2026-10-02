@@ -348,6 +348,31 @@ export default function App() {
     }).format(date);
   };
 
+  const groupFilesByDay = (files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>) => {
+    const groups = new Map<string, { key: string; label: string; sortTime: number; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> }>();
+    for (const f of files) {
+      const date = f.uploadedAt ? new Date(f.uploadedAt) : null;
+      const valid = date && !Number.isNaN(date.getTime());
+      const key = valid
+        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+        : "unknown";
+      const label = valid
+        ? new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(date)
+        : "Date unavailable";
+      const sortTime = valid ? new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() : 0;
+      const existing = groups.get(key);
+      if (existing) existing.files.push(f);
+      else groups.set(key, { key, label, sortTime, files: [f] });
+    }
+    return Array.from(groups.values())
+      .sort((a, b) => {
+        if (a.key === "unknown") return 1;
+        if (b.key === "unknown") return -1;
+        return b.sortTime - a.sortTime;
+      })
+      .map((g) => ({ ...g, files: [...g.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })) }));
+  };
+
   const fetchAdminFiles = async () => {
     setAdminLoading(true);
     setAdminError(null);
@@ -684,20 +709,30 @@ export default function App() {
                     <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">No files in this room</p>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-auto flex-1" id="guest-room-files-list">
-                    {guestRoom.files.map((f) => (
-                      <li key={f.path} className="flex items-center gap-3 px-5 py-3">
-                        <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
-                          <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                  <div className="overflow-auto flex-1" id="guest-room-files-list">
+                    {groupFilesByDay(guestRoom.files).map((group) => (
+                      <div key={group.key}>
+                        <div className="px-5 py-2 bg-neutral-50 dark:bg-neutral-950 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-3 sticky top-0 z-[1]">
+                          <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{group.label}</span>
+                          <span className="text-[11px] text-neutral-400 dark:text-neutral-500">{group.files.length} file{group.files.length === 1 ? "" : "s"}</span>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
-                          <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
-                        </div>
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
-                      </li>
+                        <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                          {group.files.map((f) => (
+                            <li key={f.path} className="flex items-center gap-3 px-5 py-3">
+                              <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
+                                <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
+                                <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
+                              </div>
+                              <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )}
                 <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-400 dark:text-neutral-500">
                   {guestRoom.files.length} file{guestRoom.files.length === 1 ? "" : "s"} in Room {guestRoom.code}
@@ -914,30 +949,40 @@ export default function App() {
                 <p className="text-xs mt-1">Uploaded PDFs will appear here as backup copies.</p>
               </div>
             ) : (
-              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 overflow-auto flex-1">
-                {adminFiles.map((f) => (
-                  <li key={f.path} className={`flex items-center gap-3 px-5 py-3 ${isSelectingRoomFiles && selectedRoomFilePaths.includes(f.path) ? "bg-neutral-50 dark:bg-neutral-950" : ""}`}>
-                    {isSelectingRoomFiles && (
-                      <input
-                        type="checkbox"
-                        checked={selectedRoomFilePaths.includes(f.path)}
-                        onChange={() => toggleRoomFileSelection(f.path)}
-                        className="w-4 h-4 shrink-0 accent-neutral-900 dark:accent-neutral-100 cursor-pointer"
-                        aria-label={`Select ${f.name} for room`}
-                        id={`room-file-checkbox-${f.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
-                      />
-                    )}
-                    <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
-                      <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+              <div className="overflow-auto flex-1" id="uploaded-files-grouped-list">
+                {groupFilesByDay(adminFiles).map((group) => (
+                  <div key={group.key}>
+                    <div className="px-5 py-2 bg-neutral-50 dark:bg-neutral-950 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-3 sticky top-0 z-[1]">
+                      <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{group.label}</span>
+                      <span className="text-[11px] text-neutral-400 dark:text-neutral-500">{group.files.length} file{group.files.length === 1 ? "" : "s"}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
-                      <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
-                    </div>
-                    <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
-                  </li>
+                    <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                      {group.files.map((f) => (
+                        <li key={f.path} className={`flex items-center gap-3 px-5 py-3 ${isSelectingRoomFiles && selectedRoomFilePaths.includes(f.path) ? "bg-neutral-50 dark:bg-neutral-950" : ""}`}>
+                          {isSelectingRoomFiles && (
+                            <input
+                              type="checkbox"
+                              checked={selectedRoomFilePaths.includes(f.path)}
+                              onChange={() => toggleRoomFileSelection(f.path)}
+                              className="w-4 h-4 shrink-0 accent-neutral-900 dark:accent-neutral-100 cursor-pointer"
+                              aria-label={`Select ${f.name} for room`}
+                              id={`room-file-checkbox-${f.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+                            />
+                          )}
+                          <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
+                            <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate" title={f.name}>{f.name}</p>
+                            <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
+                          </div>
+                          <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
 
             <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-400 dark:text-neutral-500">

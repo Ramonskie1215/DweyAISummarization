@@ -738,12 +738,20 @@ export default function App() {
   };
 
   const saveUploadCompanions = async (selectedFile: File, result: PDFParseResult, summary: string) => {
-    const results = await Promise.allSettled([
-      saveCompanionSummary(selectedFile, result, summary),
-      saveTraceBoxes(selectedFile, result),
-    ]);
-    const failed = results.find((entry) => entry.status === "rejected") as PromiseRejectedResult | undefined;
-    if (failed) throw failed.reason;
+    // Save one after the other: both write commits to the same repo branch,
+    // and parallel GitHub commits can collide (HTTP 409).
+    let firstError: any = null;
+    try {
+      await saveCompanionSummary(selectedFile, result, summary);
+    } catch (err) {
+      firstError = err;
+    }
+    try {
+      await saveTraceBoxes(selectedFile, result);
+    } catch (err) {
+      if (!firstError) firstError = err;
+    }
+    if (firstError) throw firstError;
   };
 
   const runUploadAutoProcess = async (selectedFile: File) => {

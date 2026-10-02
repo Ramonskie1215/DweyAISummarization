@@ -1,0 +1,28 @@
+{
+  "rooms": [
+    {
+      "code": "677262",
+      "files": [
+        {
+          "name": "0005-a-BSIS-Capstone-Template-1.docx__1_.pdf",
+          "path": "uploaded/0005-a-BSIS-Capstone-Template-1.docx__1_.pdf",
+          "size": 275708,
+          "uploadedAt": "2026-10-01T09:29:36Z"
+        },
+        {
+          "name": "EcoLegis_Capstone_Chapters_1_to_3_ver.1__1_.pdf",
+          "path": "uploaded/EcoLegis_Capstone_Chapters_1_to_3_ver.1__1_.pdf",
+          "size": 209510,
+          "uploadedAt": "2026-10-02T10:51:26Z"
+        },
+        {
+          "name": "inbound3727727383467450564.pdf",
+          "path": "uploaded/inbound3727727383467450564.pdf",
+          "size": 35075,
+          "uploadedAt": "2026-10-02T10:15:39Z"
+        }
+      ],
+      "createdAt": "2026-10-02T12:06:05.510Z"
+    }
+  ]
+}

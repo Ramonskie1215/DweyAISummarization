@@ -253,7 +253,8 @@ export default function App() {
 
   // Double-click selection on the Actual Document view: first double-click
   // sets the anchor, a second one on another word selects the whole range
-  // between them; double-clicking the anchor again clears the selection.
+  // between them. Double-clicking the range end again drops the range and
+  // keeps just the first text; double-clicking the anchor clears it all.
   const docPageItems = extractionResult?.pageLayouts?.[currentPageIndex]?.items || [];
   const docSelLo = docSelectionAnchor !== null && docSelectionEnd !== null ? Math.min(docSelectionAnchor, docSelectionEnd) : null;
   const docSelHi = docSelectionAnchor !== null && docSelectionEnd !== null ? Math.max(docSelectionAnchor, docSelectionEnd) : null;
@@ -262,14 +263,15 @@ export default function App() {
     : "";
 
   const handleDocItemDoubleClick = (idx: number) => {
-    if (docSelectionAnchor === null || idx === docSelectionAnchor) {
-      if (docSelectionAnchor === null) {
-        setDocSelectionAnchor(idx);
-        setDocSelectionEnd(idx);
-      } else {
-        setDocSelectionAnchor(null);
-        setDocSelectionEnd(null);
-      }
+    if (docSelectionAnchor === null) {
+      setDocSelectionAnchor(idx);
+      setDocSelectionEnd(idx);
+    } else if (idx === docSelectionEnd && docSelectionEnd !== docSelectionAnchor) {
+      // Double-clicked the range end again: drop the range, keep the first text
+      setDocSelectionEnd(docSelectionAnchor);
+    } else if (idx === docSelectionAnchor) {
+      setDocSelectionAnchor(null);
+      setDocSelectionEnd(null);
     } else {
       setDocSelectionEnd(idx);
     }

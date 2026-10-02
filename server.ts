@@ -126,7 +126,24 @@ ${text}
           htmlUrl: it.html_url || null,
         }))
         .sort((a: any, b: any) => a.name.localeCompare(b.name));
-      return res.status(200).json({ files });
+      const filesWithDates = await Promise.all(
+        files.map(async (file: any) => {
+          try {
+            const commitRes = await fetch(
+              `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits?path=${encodeURIComponent(file.path)}&per_page=1`,
+              { headers: ghHeaders }
+            );
+            if (!commitRes.ok) return { ...file, uploadedAt: null };
+            const commits: any = await commitRes.json();
+            const latest = Array.isArray(commits) ? commits[0] : null;
+            const uploadedAt = latest?.commit?.committer?.date || latest?.commit?.author?.date || null;
+            return { ...file, uploadedAt };
+          } catch (_) {
+            return { ...file, uploadedAt: null };
+          }
+        })
+      );
+      return res.status(200).json({ files: filesWithDates });
     } catch (error: any) {
       console.error("[Uploaded Files Exception]", error);
       return res.status(500).json({ error: error.message || "An error occurred while listing the uploaded files." });

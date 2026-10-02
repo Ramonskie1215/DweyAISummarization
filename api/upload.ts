@@ -35,7 +35,7 @@ export default async function handler(req: any, res: any) {
       }
       const items = await listRes.json();
       const files = (Array.isArray(items) ? items : [])
-        .filter((it: any) => it && it.type === "file")
+        .filter((it: any) => it && it.type === "file" && !String(it.name || "").endsWith(".summary.json") && !String(it.name || "").endsWith(".summary.md"))
         .map((it: any) => ({
           name: it.name,
           size: it.size,

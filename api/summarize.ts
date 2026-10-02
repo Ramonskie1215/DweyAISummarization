@@ -17,7 +17,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { text, model, prompt, length, style, language } = req.body || {};
+    const { text, model, prompt, length, style, language, format } = req.body || {};
     if (!text || typeof text !== "string" || text.trim() === "") {
       return res.status(400).json({ error: "Text content is required for summarization." });
     }
@@ -31,7 +31,20 @@ export default async function handler(req: any, res: any) {
 
     const systemPrompt = "You are an expert document assistant. You analyze extracted PDF text and produce beautifully formatted, highly informative summaries using clear Markdown hierarchy. Focus on accuracy and structure.";
     
-    const basePrompt = prompt || `You are given a text extracted from a PDF. Please read it thoroughly and produce a highly professional, beautifully structured markdown summary.
+    const fixedPageRangePrompt = format === "page-ranges" ? `You are given text extracted from a PDF, split into pages with [Page N] markers. Produce a summary in this exact Markdown format:
+
+## General Summary
+Give a clear general summary of the whole file: what it is about, its main purpose, and the most important points.
+
+## Page Range Breakdown
+Look at the context of each page. If the file has different contexts/topics in different parts, group consecutive pages that share the same context into page ranges (for example, Pages 1-3, Pages 4-6) and describe what is on that specific range of pages. If the whole file shares one context, write a single entry for Pages 1 to the last page.
+Use only page numbers that appear in the [Page N] markers. Do not invent pages or content.
+
+Text to analyze, by page:
+--------------------------------------
+${text}
+--------------------------------------` : null;
+    const basePrompt = fixedPageRangePrompt || prompt || `You are given a text extracted from a PDF. Please read it thoroughly and produce a highly professional, beautifully structured markdown summary.
 
 Please follow these exact requirements:
 - **Summary Length**: ${summaryLengthText} (Please adapt details accordingly)

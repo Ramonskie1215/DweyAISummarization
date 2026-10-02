@@ -26,7 +26,8 @@ import {
   FolderOpen,
   User,
   KeyRound,
-  Users
+  Users,
+  History
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
@@ -56,9 +57,14 @@ export default function App() {
   const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);
   const [isHostingRoom, setIsHostingRoom] = useState(false);
   const [hostRoomError, setHostRoomError] = useState<string | null>(null);
-  const [hostedRoom, setHostedRoom] = useState<{ code: string; createdAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
+  const [hostedRoom, setHostedRoom] = useState<{ code: string; createdAt?: string | null; startedAt?: string | null; endedAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
   const [copiedRoomCode, setCopiedRoomCode] = useState(false);
-  const [guestRoom, setGuestRoom] = useState<{ code: string; createdAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
+  const [isRoomHistoryOpen, setIsRoomHistoryOpen] = useState(false);
+  const [roomHistory, setRoomHistory] = useState<Array<{ code: string; createdAt?: string | null; startedAt?: string | null; endedAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> }>>([]);
+  const [roomHistoryLoading, setRoomHistoryLoading] = useState(false);
+  const [roomHistoryError, setRoomHistoryError] = useState<string | null>(null);
+  const [endingRoomCode, setEndingRoomCode] = useState<string | null>(null);
+  const [guestRoom, setGuestRoom] = useState<{ code: string; createdAt?: string | null; startedAt?: string | null; endedAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [joinRoomError, setJoinRoomError] = useState<string | null>(null);
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>>([]);
@@ -436,9 +442,10 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
-      setHostedRoom({ code: String(data.code), createdAt: data.createdAt || null, files: Array.isArray(data.files) ? data.files : files });
+      setHostedRoom({ code: String(data.code), createdAt: data.createdAt || data.startedAt || null, startedAt: data.startedAt || data.createdAt || null, endedAt: data.endedAt || null, files: Array.isArray(data.files) ? data.files : files });
       setIsSelectingRoomFiles(false);
       setSelectedRoomFilePaths([]);
+      fetchRoomHistory().catch(() => {});
     } catch (err: any) {
       console.error("Failed to host room:", err);
       setHostRoomError(err.message || "Could not create the room.");
@@ -463,6 +470,51 @@ export default function App() {
     setTimeout(() => setCopiedRoomCode(false), 2000);
   };
 
+  const fetchRoomHistory = async () => {
+    setRoomHistoryLoading(true);
+    setRoomHistoryError(null);
+    try {
+      const res = await fetch("/api/rooms");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+      setRoomHistory(Array.isArray(data.rooms) ? data.rooms : []);
+    } catch (err: any) {
+      console.error("Failed to load room history:", err);
+      setRoomHistoryError(err.message || "Could not load room history.");
+    } finally {
+      setRoomHistoryLoading(false);
+    }
+  };
+
+  const openRoomHistory = () => {
+    setIsRoomHistoryOpen(true);
+    fetchRoomHistory();
+  };
+
+  const endHostedRoom = async (code: string) => {
+    setEndingRoomCode(code);
+    setRoomHistoryError(null);
+    try {
+      const res = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "end", code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+      const ended = { code: String(data.code || code), createdAt: data.createdAt || null, startedAt: data.startedAt || data.createdAt || null, endedAt: data.endedAt || new Date().toISOString(), files: Array.isArray(data.files) ? data.files : [] };
+      setRoomHistory((prev) => prev.map((r) => (r.code === ended.code ? { ...r, ...ended, files: ended.files.length ? ended.files : r.files } : r)));
+      setHostedRoom((prev) => (prev && prev.code === ended.code ? { ...prev, endedAt: ended.endedAt } : prev));
+      if (!isRoomHistoryOpen) fetchRoomHistory().catch(() => {});
+    } catch (err: any) {
+      console.error("Failed to end room:", err);
+      setRoomHistoryError(err.message || "Could not end that room.");
+      if (!isRoomHistoryOpen) setHostRoomError(err.message || "Could not end that room.");
+    } finally {
+      setEndingRoomCode(null);
+    }
+  };
+
   const joinGuestRoom = async () => {
     const code = roomCode.trim();
     if (!/^\d{6}$/.test(code)) {
@@ -475,7 +527,7 @@ export default function App() {
       const res = await fetch(`/api/rooms?code=${encodeURIComponent(code)}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
-      setGuestRoom({ code: String(data.code || code), createdAt: data.createdAt || null, files: Array.isArray(data.files) ? data.files : [] });
+      setGuestRoom({ code: String(data.code || code), createdAt: data.createdAt || data.startedAt || null, startedAt: data.startedAt || data.createdAt || null, endedAt: data.endedAt || null, files: Array.isArray(data.files) ? data.files : [] });
       setIsRoomCodeModalOpen(false);
     } catch (err: any) {
       console.error("Failed to join room:", err);
@@ -856,6 +908,14 @@ export default function App() {
                   <span>Host Room</span>
                 </button>
                 <button
+                  onClick={openRoomHistory}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all"
+                  id="room-history-btn"
+                >
+                  <History className="w-4 h-4" />
+                  <span>History</span>
+                </button>
+                <button
                   onClick={() => setAppView("upload")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
                   id="open-upload-ui-btn"
@@ -917,17 +977,30 @@ export default function App() {
                         <span>{copiedRoomCode ? "Copied!" : "Copy"}</span>
                       </button>
                     </div>
-                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">{hostedRoom.files.length} file{hostedRoom.files.length === 1 ? "" : "s"} in this room</p>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">{hostedRoom.files.length} file{hostedRoom.files.length === 1 ? "" : "s"} in this room · Started {formatUploadedDateTime(hostedRoom.startedAt || hostedRoom.createdAt)}{hostedRoom.endedAt ? ` · Ended ${formatUploadedDateTime(hostedRoom.endedAt)}` : ""}</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setHostedRoom(null)}
-                  className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-900 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors shrink-0"
-                  id="close-hosted-room-panel-btn"
-                >
-                  Done
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!hostedRoom.endedAt && (
+                    <button
+                      type="button"
+                      onClick={() => endHostedRoom(hostedRoom.code)}
+                      disabled={endingRoomCode === hostedRoom.code}
+                      className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-500 disabled:opacity-40 transition-colors"
+                      id="end-hosted-room-btn"
+                    >
+                      {endingRoomCode === hostedRoom.code ? "Ending..." : "End Room"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setHostedRoom(null)}
+                    className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-900 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                    id="close-hosted-room-panel-btn"
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1797,6 +1870,111 @@ export default function App() {
           </div>
         </div>
       </footer>
+      )}
+
+      {isRoomHistoryOpen && (
+        <div id="room-history-overlay" className="fixed inset-0 z-50">
+          <button
+            type="button"
+            aria-label="Close room history"
+            onClick={() => setIsRoomHistoryOpen(false)}
+            className="absolute inset-0 bg-black/50 backdrop-blur-[2px] cursor-pointer"
+            id="close-room-history-overlay-btn"
+          />
+          <aside id="room-history-drawer" className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col" aria-label="Hosted room history">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
+                  <History className="w-4 h-4" />
+                  <span>Room History</span>
+                </h2>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Hosted rooms with their start and end times.</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={fetchRoomHistory}
+                  disabled={roomHistoryLoading}
+                  className="p-2 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-all"
+                  title="Refresh room history"
+                  id="refresh-room-history-btn"
+                >
+                  <RefreshCw className={`w-4 h-4 ${roomHistoryLoading ? "animate-spin" : ""}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRoomHistoryOpen(false)}
+                  className="p-2 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all"
+                  aria-label="Close"
+                  title="Close"
+                  id="close-room-history-btn"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {roomHistoryLoading ? (
+                <div className="h-full flex items-center justify-center text-neutral-400 dark:text-neutral-500">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+              ) : roomHistoryError ? (
+                <div className="flex items-start gap-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-4 text-sm text-red-700 dark:text-red-300">
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <span>{roomHistoryError}</span>
+                </div>
+              ) : roomHistory.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400 dark:text-neutral-500">
+                  <History className="w-10 h-10 mb-3" />
+                  <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">No rooms hosted yet</p>
+                  <p className="text-xs mt-1">Host a room and it will appear here.</p>
+                </div>
+              ) : (
+                <ul className="space-y-3" id="room-history-list">
+                  {roomHistory.map((room) => (
+                    <li key={room.code} className="border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 bg-white dark:bg-neutral-900">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="text-xl font-mono font-bold tracking-[0.25em] text-neutral-900 dark:text-neutral-100">{room.code}</span>
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{room.files.length} file{room.files.length === 1 ? "" : "s"} in this room</p>
+                        </div>
+                        <span className={`shrink-0 px-2 py-1 rounded-full text-[11px] font-bold ${room.endedAt ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400" : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"}`}>
+                          {room.endedAt ? "Ended" : "Active"}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-1 text-xs">
+                        <p className="flex justify-between gap-3"><span className="text-neutral-400 dark:text-neutral-500 font-semibold">Started</span><span className="text-neutral-700 dark:text-neutral-300 text-right">{formatUploadedDateTime(room.startedAt || room.createdAt)}</span></p>
+                        <p className="flex justify-between gap-3"><span className="text-neutral-400 dark:text-neutral-500 font-semibold">Ended</span><span className="text-neutral-700 dark:text-neutral-300 text-right">{room.endedAt ? formatUploadedDateTime(room.endedAt) : "—"}</span></p>
+                      </div>
+                      {room.files.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">Files</p>
+                          <ul className="space-y-1">
+                            {room.files.map((f) => (
+                              <li key={f.path} className="text-xs text-neutral-600 dark:text-neutral-400 truncate" title={f.name}>{f.name}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {!room.endedAt && (
+                        <button
+                          type="button"
+                          onClick={() => endHostedRoom(room.code)}
+                          disabled={endingRoomCode === room.code}
+                          className="mt-3 w-full px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-500 disabled:opacity-40 transition-colors"
+                          id={`end-room-${room.code}-btn`}
+                        >
+                          {endingRoomCode === room.code ? "Ending..." : "End Room"}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </aside>
+        </div>
       )}
     </div>
   );

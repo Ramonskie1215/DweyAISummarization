@@ -23,7 +23,9 @@ import {
   Sun,
   Moon,
   ScanText,
-  FolderOpen
+  FolderOpen,
+  User,
+  KeyRound
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
@@ -43,6 +45,11 @@ export default function App() {
   const [docSelectionEnd, setDocSelectionEnd] = useState<number | null>(null);
   const [copiedDocSelection, setCopiedDocSelection] = useState(false);
   const [appView, setAppView] = useState<"files" | "upload">("files");
+  const [profileRole, setProfileRole] = useState<"Admin" | "Guest">(() => {
+    const saved = localStorage.getItem("dwey-profile");
+    return saved === "Guest" || saved === "Admin" ? saved : "Admin";
+  });
+  const [roomCode, setRoomCode] = useState("");
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -78,6 +85,10 @@ export default function App() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("dwey-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("dwey-profile", profileRole);
+  }, [profileRole]);
 
   // Dynamic layout measurements
   const [containerWidth, setContainerWidth] = useState(600);
@@ -474,7 +485,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {appView === "upload" && (
+          {profileRole === "Admin" && appView === "upload" && (
             <button
               onClick={() => setAppView("files")}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all"
@@ -492,15 +503,81 @@ export default function App() {
           >
             {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-full text-xs font-semibold border border-neutral-200 dark:border-neutral-800">
-            <Sparkles className="w-3.5 h-3.5 text-neutral-800 dark:text-neutral-200" />
-            <span>AI-powered</span>
+          <div id="profile-switcher" className="flex items-center gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-800 rounded-full border border-neutral-200 dark:border-neutral-800">
+            <span className="hidden sm:flex items-center gap-1.5 pl-2 pr-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+              <User className="w-3.5 h-3.5" />
+              <span>Profile</span>
+            </span>
+            <div className="flex items-center bg-white dark:bg-neutral-900 rounded-full border border-neutral-200 dark:border-neutral-700 p-0.5">
+              {(["Admin", "Guest"] as const).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => setProfileRole(role)}
+                  aria-pressed={profileRole === role}
+                  id={role === "Admin" ? "profile-admin-btn" : "profile-guest-btn"}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    profileRole === role
+                      ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 shadow-sm"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
       {/* MAIN LAYOUT */}
-      {appView === "files" ? (
+      {profileRole === "Guest" ? (
+        <>
+          <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950" aria-hidden="true" />
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-4" id="guest-room-code-overlay">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="guest-room-code-title"
+              className="w-full max-w-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6"
+              id="guest-room-code-modal"
+            >
+              <div className="w-11 h-11 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-300 mb-4">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <h2 id="guest-room-code-title" className="text-base font-bold text-neutral-900 dark:text-neutral-100">Enter Room Code</h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Type the 6-digit room code to continue.</p>
+
+              <label htmlFor="room-code-input" className="block text-xs font-semibold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider mt-5 mb-2">
+                Room Code
+              </label>
+              <input
+                id="room-code-input"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                maxLength={6}
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                aria-describedby="room-code-hint"
+                className="w-full border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 rounded-lg px-3 py-3 text-center text-lg font-mono font-semibold tracking-[0.5em] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-300 dark:placeholder:text-neutral-700 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300"
+              />
+              <p id="room-code-hint" className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-2 text-right">{roomCode.length}/6</p>
+
+              <button
+                type="button"
+                disabled={roomCode.length !== 6}
+                className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                id="enter-room-code-btn"
+              >
+                Enter
+              </button>
+              <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-3 text-center">Switch back to Admin in Profile to return.</p>
+            </div>
+          </div>
+        </>
+      ) : appView === "files" ? (
         <main id="files-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="uploaded-files-panel">
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
@@ -1366,6 +1443,7 @@ export default function App() {
       )}
 
       {/* FOOTER */}
+      {profileRole !== "Guest" && (
       <footer id="app-footer" className="bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 py-6 px-6 md:px-12 mt-12 shrink-0 text-center sm:text-left">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-neutral-400 dark:text-neutral-500">
           <p>© 2026 PDF Extractor & Summarizer App. Powered by DeepSeek API via APMix.</p>
@@ -1376,6 +1454,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      )}
     </div>
   );
 }

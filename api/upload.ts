@@ -12,6 +12,45 @@ export default async function handler(req: any, res: any) {
     return res.status(200).end();
   }
 
+  // Admin Mode: list the backup copies stored in /uploaded
+  if (req.method === 'GET') {
+    try {
+      const token = process.env.GITHUB_TOKEN;
+      const ghOwner = process.env.GITHUB_OWNER || "Ramonskie1215";
+      const ghRepo = process.env.GITHUB_REPO || "DweyAISummarization";
+      const ghHeaders: Record<string, string> = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "dwey-ai-summarization",
+      };
+      if (token) ghHeaders["Authorization"] = `Bearer ${token}`;
+
+      const listRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/uploaded`, { headers: ghHeaders });
+      if (listRes.status === 404) {
+        return res.status(200).json({ files: [] });
+      }
+      if (!listRes.ok) {
+        const details = await listRes.text();
+        return res.status(listRes.status).json({ error: "Could not list the uploaded files.", details });
+      }
+      const items = await listRes.json();
+      const files = (Array.isArray(items) ? items : [])
+        .filter((it: any) => it && it.type === "file")
+        .map((it: any) => ({
+          name: it.name,
+          size: it.size,
+          path: it.path,
+          downloadUrl: it.download_url || null,
+          htmlUrl: it.html_url || null,
+        }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
+      return res.status(200).json({ files });
+    } catch (error: any) {
+      console.error("[Vercel Uploaded Files Exception]", error);
+      return res.status(500).json({ error: error.message || "An error occurred while listing the uploaded files." });
+    }
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

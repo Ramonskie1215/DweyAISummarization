@@ -107,6 +107,46 @@ ${text}
     }
   });
 
+
+  const getUploadDateFolder = (input?: string) => {
+    const candidate = String(input || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return candidate;
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const get = (t: string) => parts.find((x) => x.type === t)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  };
+  const listUploadedFilesStore = async (ghOwner: string, ghRepo: string, ghHeaders: Record<string, string>) => {
+    const listRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/uploaded`, { headers: ghHeaders });
+    if (listRes.status === 404) return [] as any[];
+    if (!listRes.ok) {
+      const details = await listRes.text();
+      throw new Error(`Could not list uploaded files (${listRes.status}): ${details}`);
+    }
+    const items: any = await listRes.json();
+    const topLevel = Array.isArray(items) ? items : [];
+    const dirFiles = await Promise.all(
+      topLevel.filter((it: any) => it && it.type === "dir").map(async (dir: any) => {
+        try {
+          const dirRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${String(dir.path).split("/").map(encodeURIComponent).join("/")}`, { headers: ghHeaders });
+          if (!dirRes.ok) return [] as any[];
+          const inner: any = await dirRes.json();
+          return Array.isArray(inner) ? inner : [];
+        } catch (_) { return [] as any[]; }
+      })
+    );
+    const all = [...topLevel, ...dirFiles.flat()];
+    return all
+      .filter((it: any) => it && it.type === "file" && !String(it.name || "").endsWith(".summary.json") && !String(it.name || "").endsWith(".summary.md"))
+      .map((it: any) => ({
+        name: it.name,
+        size: it.size,
+        path: it.path,
+        downloadUrl: it.download_url || null,
+        htmlUrl: it.html_url || null,
+      }))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name));
+  };
+
   // Admin Mode: list the backup copies stored in the repo's /uploaded folder
   app.get("/api/upload", async (req, res) => {
     try {
@@ -120,25 +160,7 @@ ${text}
       };
       if (token) ghHeaders["Authorization"] = `Bearer ${token}`;
 
-      const listRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/uploaded`, { headers: ghHeaders });
-      if (listRes.status === 404) {
-        return res.status(200).json({ files: [] });
-      }
-      if (!listRes.ok) {
-        const details = await listRes.text();
-        return res.status(listRes.status).json({ error: "Could not list the uploaded files.", details });
-      }
-      const items: any = await listRes.json();
-      const files = (Array.isArray(items) ? items : [])
-        .filter((it: any) => it && it.type === "file" && !String(it.name || "").endsWith(".summary.json") && !String(it.name || "").endsWith(".summary.md"))
-        .map((it: any) => ({
-          name: it.name,
-          size: it.size,
-          path: it.path,
-          downloadUrl: it.download_url || null,
-          htmlUrl: it.html_url || null,
-        }))
-        .sort((a: any, b: any) => a.name.localeCompare(b.name));
+      const files = await listUploadedFilesStore(ghOwner, ghRepo, ghHeaders);
       const filesWithDates = await Promise.all(
         files.map(async (file: any) => {
           try {
@@ -166,7 +188,7 @@ ${text}
   // Backup endpoint: commits a copy of an uploaded PDF to the repo's /uploaded folder via the GitHub API
   app.post("/api/upload", async (req, res) => {
     try {
-      const { filename, content } = req.body;
+      const { filename, content, dateFolder } = req.body;
       if (!filename || !content || typeof content !== "string") {
         return res.status(400).json({ error: "filename and base64 content are required." });
       }
@@ -179,7 +201,8 @@ ${text}
       const ghRepo = process.env.GITHUB_REPO || "DweyAISummarization";
       const baseName = String(filename).split(/[\\/]/).pop() || "upload.pdf";
       const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, "_") || "upload.pdf";
-      const repoPath = `uploaded/${safeName}`;
+      const folder = getUploadDateFolder(dateFolder);
+      const repoPath = `uploaded/${folder}/${safeName}`;
 
       const ghHeaders: Record<string, string> = {
         "Accept": "application/vnd.github+json",

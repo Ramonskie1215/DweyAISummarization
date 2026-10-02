@@ -128,6 +128,9 @@ export async function extractTextFromPDF(
         // Lazily-created Tesseract worker, reused across pages that need OCR
         let ocrWorker: any = null;
         let ocrWasUsed = false;
+        // All OCR items across every page, so their heights can be normalized
+        // to one fixed font size for the whole document
+        const ocrItemRefs: PDFTextItem[] = [];
 
         // Loop through and extract text page by page
         for (let i = 1; i <= pagesCount; i++) {
@@ -176,6 +179,7 @@ export async function extractTextFromPDF(
                 finalPageText = cleanOcrText;
                 // Keep coordinates too, so the layout view works for scanned pages
                 ocrLayoutItems = ocrWordsToLayoutItems(data, scale);
+                ocrItemRefs.push(...ocrLayoutItems);
               }
             } catch (ocrError) {
               console.warn(`OCR fallback failed for page ${i}:`, ocrError);
@@ -214,6 +218,18 @@ export async function extractTextFromPDF(
 
           if (onProgress) {
             onProgress(i, pagesCount);
+          }
+        }
+
+        // OCR word heights vary per word (ascenders, box noise), which made
+        // the layout view render mismatched font sizes across pages. Pin
+        // every OCR item to one fixed height — the document-wide median —
+        // so all pages share the same font size.
+        if (ocrItemRefs.length) {
+          const sortedHeights = ocrItemRefs.map((it) => it.height).sort((a, b) => a - b);
+          const fixedHeight = sortedHeights[Math.floor(sortedHeights.length / 2)];
+          for (const item of ocrItemRefs) {
+            item.height = fixedHeight;
           }
         }
 

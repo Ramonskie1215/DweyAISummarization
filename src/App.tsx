@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
-import { extractTextFromPDF, PDFParseResult } from "./utils/pdfParser";
+import { extractTextFromPDF, PDFPageLayout, PDFParseResult } from "./utils/pdfParser";
 
 const FIXED_SUMMARY_SETTINGS = {
   length: "Detailed",
@@ -79,6 +79,8 @@ export default function App() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isSavingCompanion, setIsSavingCompanion] = useState(false);
   const [companionSaved, setCompanionSaved] = useState(false);
+  const [isSavingTraces, setIsSavingTraces] = useState(false);
+  const [traceBoxesSaved, setTraceBoxesSaved] = useState(false);
   const [uploadAutoError, setUploadAutoError] = useState<string | null>(null);
   const [selectedGuestFile, setSelectedGuestFile] = useState<RoomFileItem | null>(null);
   const [guestSummary, setGuestSummary] = useState<string | null>(null);
@@ -595,6 +597,54 @@ export default function App() {
     return `uploaded/${folder}/${safeName}`;
   };
 
+
+  const normalizeSavedPageLayouts = (data: any): PDFPageLayout[] => {
+    const source = Array.isArray(data?.pageLayouts) ? data.pageLayouts : Array.isArray(data?.pages) ? data.pages : [];
+    return source
+      .map((page: any) => {
+        const items = Array.isArray(page?.items) ? page.items : [];
+        return {
+          width: Number(page?.width) || 0,
+          height: Number(page?.height) || 0,
+          items: items
+            .map((item: any) => {
+              if (Array.isArray(item)) {
+                return {
+                  str: String(item[0] || ""),
+                  x: Number(item[1]) || 0,
+                  y: Number(item[2]) || 0,
+                  width: Number(item[3]) || 0,
+                  height: Number(item[4]) || 0,
+                };
+              }
+              return {
+                str: String(item?.str || ""),
+                x: Number(item?.x) || 0,
+                y: Number(item?.y) || 0,
+                width: Number(item?.width) || 0,
+                height: Number(item?.height) || 0,
+              };
+            })
+            .filter((item: any) => String(item.str || "").trim() !== ""),
+        } as PDFPageLayout;
+      })
+      .filter((page: PDFPageLayout) => page.width > 0 && page.height > 0);
+  };
+
+  const buildResultFromSavedTraces = (data: any): PDFParseResult | null => {
+    const pageLayouts = normalizeSavedPageLayouts(data);
+    if (!pageLayouts.length) return null;
+    const pagesCount = typeof data?.pagesCount === "number" && data.pagesCount > 0 ? data.pagesCount : pageLayouts.length;
+    const pages = pageLayouts.map((page) => page.items.map((item) => item.str).join(" "));
+    while (pages.length < pagesCount) pages.push("");
+    return {
+      text: pages.join("\n\n"),
+      pagesCount,
+      pages: pages.slice(0, pagesCount),
+      pageLayouts,
+    };
+  };
+
   const generateFixedSummary = async (result: PDFParseResult) => {
     setIsSummarizing(true);
     setSummarizationError(null);
@@ -659,15 +709,53 @@ export default function App() {
     }
   };
 
+  const saveTraceBoxes = async (selectedFile: File, result: PDFParseResult) => {
+    setIsSavingTraces(true);
+    setTraceBoxesSaved(false);
+    try {
+      if (!result.pageLayouts || result.pageLayouts.length === 0) {
+        throw new Error("No trace boxes were captured for this file.");
+      }
+      const filePath = getUploadedRepoPath(selectedFile.name);
+      const res = await fetch("/api/traces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filePath,
+          fileName: filePath.split("/").pop() || selectedFile.name,
+          fileSize: selectedFile.size,
+          pagesCount: result.pagesCount,
+          pageLayouts: result.pageLayouts,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+      setTraceBoxesSaved(true);
+      return data;
+    } finally {
+      setIsSavingTraces(false);
+    }
+  };
+
+  const saveUploadCompanions = async (selectedFile: File, result: PDFParseResult, summary: string) => {
+    const results = await Promise.allSettled([
+      saveCompanionSummary(selectedFile, result, summary),
+      saveTraceBoxes(selectedFile, result),
+    ]);
+    const failed = results.find((entry) => entry.status === "rejected") as PromiseRejectedResult | undefined;
+    if (failed) throw failed.reason;
+  };
+
   const runUploadAutoProcess = async (selectedFile: File) => {
     setUploadAutoError(null);
     setCompanionSaved(false);
+    setTraceBoxesSaved(false);
     setSummaryResult(null);
     const result = await processFile(selectedFile);
     if (!result) return;
     try {
       const summary = await generateFixedSummary(result);
-      await saveCompanionSummary(selectedFile, result, summary);
+      await saveUploadCompanions(selectedFile, result, summary);
       fetchAdminFiles().catch(() => {});
     } catch (err: any) {
       setUploadAutoError(err.message || "Could not finish processing this file.");
@@ -678,8 +766,8 @@ export default function App() {
     if (!file || !extractionResult) return;
     setUploadAutoError(null);
     try {
-      const summary = await generateFixedSummary(extractionResult);
-      await saveCompanionSummary(file, extractionResult, summary);
+      const summary = summaryResult || (await generateFixedSummary(extractionResult));
+      await saveUploadCompanions(file, extractionResult, summary);
       fetchAdminFiles().catch(() => {});
     } catch (err: any) {
       setUploadAutoError(err.message || "Could not finish processing this file.");
@@ -690,11 +778,12 @@ export default function App() {
     resetAll();
     setUploadAutoError(null);
     setCompanionSaved(false);
+    setTraceBoxesSaved(false);
     setIsUploadModalOpen(true);
   };
 
   const closeUploadModal = () => {
-    if (isExtracting || isSummarizing || isSavingCompanion) return;
+    if (isExtracting || isSummarizing || isSavingCompanion || isSavingTraces) return;
     setIsUploadModalOpen(false);
     fetchAdminFiles().catch(() => {});
   };
@@ -751,13 +840,24 @@ export default function App() {
         setGuestSummaryError("No AI summary saved for this file yet.");
       }
 
+      // Saved trace boxes — reuse them so Guests do not need to extract text again just for the boxes.
+      let savedTraceResult: PDFParseResult | null = null;
+      try {
+        const traceRes = await fetch(`/api/traces?path=${encodeURIComponent(roomFile.path)}`);
+        const traceData = await traceRes.json().catch(() => ({}));
+        if (traceRes.ok) savedTraceResult = buildResultFromSavedTraces(traceData);
+      } catch (_) {
+        savedTraceResult = null;
+      }
+
       const rawUrl = `https://raw.githubusercontent.com/Ramonskie1215/DweyAISummarization/main/${roomFile.path.split("/").map(encodeURIComponent).join("/")}`;
       const pdfRes = await fetch(rawUrl);
       if (!pdfRes.ok) throw new Error(`Could not load the document file (status ${pdfRes.status}).`);
       const blob = await pdfRes.blob();
       const pdfFile = new File([blob], roomFile.name, { type: "application/pdf" });
       setGuestPdfFile(pdfFile);
-      const result = await extractTextFromPDF(pdfFile);
+      // Older files without saved traces still fall back to extraction once.
+      const result = savedTraceResult || (await extractTextFromPDF(pdfFile));
       setGuestDocResult(result);
     } catch (err: any) {
       console.error("Failed to open guest document:", err);
@@ -2245,7 +2345,7 @@ export default function App() {
             <button
               type="button"
               onClick={closeUploadModal}
-              disabled={isExtracting || isSummarizing || isSavingCompanion}
+              disabled={isExtracting || isSummarizing || isSavingCompanion || isSavingTraces}
               className="absolute top-3 right-3 p-1.5 rounded-full text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 transition-colors cursor-pointer"
               aria-label="Close upload"
               title="Close"
@@ -2257,7 +2357,7 @@ export default function App() {
               <UploadCloud className="w-5 h-5" />
             </div>
             <h2 id="upload-modal-title" className="text-base font-bold text-neutral-900 dark:text-neutral-100">Upload Document</h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">We will extract the text, create the AI summary, and save it with the file. AI settings are fixed.</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">We will extract the text, create the AI summary, and save the summary and trace boxes with the file. AI settings are fixed.</p>
 
             <input type="file" ref={uploadModalInputRef} onChange={handleUploadModalFileChange} accept=".pdf" className="hidden" id="upload-modal-file-input" />
 
@@ -2299,8 +2399,8 @@ export default function App() {
                     <span>Generating AI summary</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    {isSavingCompanion ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : companionSaved ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />}
-                    <span>Saving summary with the file</span>
+                    {isSavingCompanion || isSavingTraces ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : companionSaved && traceBoxesSaved ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />}
+                    <span>Saving summary & trace boxes with the file</span>
                   </li>
                 </ol>
 
@@ -2317,19 +2417,19 @@ export default function App() {
                   </div>
                 )}
 
-                {summaryResult && companionSaved ? (
+                {summaryResult && companionSaved && traceBoxesSaved ? (
                   <div>
                     <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                       <CheckCircle className="w-4 h-4" />
-                      <span>Done — summary saved with this file</span>
+                      <span>Done — summary & trace boxes saved with this file</span>
                     </div>
                     <div className="mt-3 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 max-h-64 overflow-y-auto prose prose-neutral prose-sm max-w-none" id="upload-modal-summary-preview">
                       <Markdown>{summaryResult}</Markdown>
                     </div>
                     <button type="button" onClick={closeUploadModal} className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm hover:opacity-90 transition-opacity" id="upload-modal-done-btn">Done</button>
                   </div>
-                ) : extractionResult && !isSummarizing && !isSavingCompanion ? (
-                  <button type="button" onClick={retryUploadAutoSummary} className="w-full border border-neutral-200 dark:border-neutral-700 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors" id="upload-modal-retry-btn">Retry AI Summary</button>
+                ) : extractionResult && !isSummarizing && !isSavingCompanion && !isSavingTraces ? (
+                  <button type="button" onClick={retryUploadAutoSummary} className="w-full border border-neutral-200 dark:border-neutral-700 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors" id="upload-modal-retry-btn">Retry processing</button>
                 ) : null}
               </div>
             )}

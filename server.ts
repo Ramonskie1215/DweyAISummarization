@@ -454,16 +454,30 @@ ${text}
       if (Buffer.byteLength(payloadText, "utf-8") > 900000) {
         return res.status(413).json({ error: "The saved trace boxes are too large for one companion file." });
       }
-      const existing: any = await readCompanionFile(tracePath);
       const content = Buffer.from(payloadText, "utf-8").toString("base64");
-      const putRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${tracePath.split("/").map(encodeURIComponent).join("/")}`, {
-        method: "PUT",
-        headers: { ...ghHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ message: `Save trace boxes for ${fileName}`, content, ...(existing?.sha ? { sha: existing.sha } : {}) }),
-      });
-      if (!putRes.ok) {
-        const details = await putRes.text();
-        return res.status(putRes.status).json({ error: "Could not save the trace boxes.", details });
+      // GitHub can return 409 when another commit lands on the branch while
+      // this one is being created (or the file sha went stale). Re-read and retry.
+      let putOk = false;
+      let lastStatus = 0;
+      let lastDetails = "";
+      for (let attempt = 0; attempt < 3 && !putOk; attempt++) {
+        const existing: any = await readCompanionFile(tracePath);
+        const putRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${tracePath.split("/").map(encodeURIComponent).join("/")}`, {
+          method: "PUT",
+          headers: { ...ghHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `Save trace boxes for ${fileName}`, content, ...(existing?.sha ? { sha: existing.sha } : {}) }),
+        });
+        if (putRes.ok) {
+          putOk = true;
+          break;
+        }
+        lastStatus = putRes.status;
+        lastDetails = await putRes.text();
+        if ((putRes.status !== 409 && putRes.status !== 422) || attempt === 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      }
+      if (!putOk) {
+        return res.status(lastStatus || 500).json({ error: "Could not save the trace boxes.", details: lastDetails });
       }
       const itemsCount = pages.reduce((sum: number, page: any) => sum + (Array.isArray(page.items) ? page.items.length : 0), 0);
       return res.json({ ok: true, tracePath, createdAt: payload.createdAt, pagesCount, itemsCount });

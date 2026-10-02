@@ -98,6 +98,10 @@ export async function extractTextFromPDF(
 
   return new Promise((resolve, reject) => {
     fileReader.onload = async () => {
+      // Lazily-created Tesseract worker, reused across pages that need OCR.
+      // Declared before the try so the finally block can always clean it up.
+      let ocrWorker: any = null;
+      let ocrWasUsed = false;
       try {
         const typedarray = new Uint8Array(fileReader.result as ArrayBuffer);
         const loadingTask = pdfjsLib.getDocument({ data: typedarray });
@@ -125,9 +129,6 @@ export async function extractTextFromPDF(
           console.warn("Could not load PDF document metadata:", metaError);
         }
 
-        // Lazily-created Tesseract worker, reused across pages that need OCR
-        let ocrWorker: any = null;
-        let ocrWasUsed = false;
         // All OCR items across every page, so their heights can be normalized
         // to one fixed font size for the whole document
         const ocrItemRefs: PDFTextItem[] = [];

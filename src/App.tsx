@@ -1099,14 +1099,14 @@ export default function App() {
                     ) : rawTextMode === "document" ? (
                       <div className="flex flex-col h-full justify-between gap-6">
                         {/* Focused traced-text readout */}
-                        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-3 flex flex-wrap items-center gap-3 text-xs select-none min-h-[42px]">
+                        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg px-3 h-11 flex flex-nowrap items-center gap-3 text-xs select-none overflow-hidden shrink-0">
                           <span className="font-semibold text-neutral-600 dark:text-neutral-400 flex items-center gap-1.5 shrink-0">
                             <Info className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" />
                             Traced Text:
                           </span>
                           {selectedDocText ? (
                             <>
-                              <span className="text-neutral-800 dark:text-neutral-200 font-medium break-all flex-1 min-w-0">
+                              <span className="text-neutral-800 dark:text-neutral-200 font-medium truncate flex-1 min-w-0" title={selectedDocText}>
                                 {selectedDocText}
                               </span>
                               <button
@@ -1123,11 +1123,11 @@ export default function App() {
                               </button>
                             </>
                           ) : focusedDocItem !== null && extractionResult.pageLayouts && extractionResult.pageLayouts[currentPageIndex] && extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem] ? (
-                            <span className="text-neutral-800 dark:text-neutral-200 font-medium break-all">
+                            <span className="text-neutral-800 dark:text-neutral-200 font-medium truncate">
                               {extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem].str}
                             </span>
                           ) : (
-                            <span className="text-neutral-400 dark:text-neutral-500 italic">Hover to highlight text. Double-click a word, then double-click another to select everything in between.</span>
+                            <span className="text-neutral-400 dark:text-neutral-500 italic truncate">Hover to highlight text. Double-click a word, then double-click another to select everything in between.</span>
                           )}
                         </div>
 

@@ -50,6 +50,7 @@ export default function App() {
     return saved === "Guest" || saved === "Admin" ? saved : "Admin";
   });
   const [roomCode, setRoomCode] = useState("");
+  const [isRoomCodeModalOpen, setIsRoomCodeModalOpen] = useState(false);
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("dwey-profile", profileRole);
+    setIsRoomCodeModalOpen(false);
   }, [profileRole]);
 
   // Dynamic layout measurements
@@ -532,15 +534,36 @@ export default function App() {
       {/* MAIN LAYOUT */}
       {profileRole === "Guest" ? (
         <>
-          <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950" aria-hidden="true" />
+          <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center p-8">
+            <button
+              type="button"
+              onClick={() => setIsRoomCodeModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+              id="open-room-code-modal-btn"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>Enter Room Code</span>
+            </button>
+          </main>
+          {isRoomCodeModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-4" id="guest-room-code-overlay">
             <div
               role="dialog"
               aria-modal="true"
               aria-labelledby="guest-room-code-title"
-              className="w-full max-w-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6"
+              className="relative w-full max-w-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6"
               id="guest-room-code-modal"
             >
+              <button
+                type="button"
+                onClick={() => setIsRoomCodeModalOpen(false)}
+                className="absolute top-3 right-3 p-1.5 rounded-full text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                aria-label="Close"
+                title="Close"
+                id="close-room-code-modal-btn"
+              >
+                <X className="w-4 h-4" />
+              </button>
               <div className="w-11 h-11 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-300 mb-4">
                 <KeyRound className="w-5 h-5" />
               </div>
@@ -573,9 +596,18 @@ export default function App() {
               >
                 Enter
               </button>
+              <button
+                type="button"
+                onClick={() => setIsRoomCodeModalOpen(false)}
+                className="mt-2 w-full border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                id="close-room-code-btn"
+              >
+                Close
+              </button>
               <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-3 text-center">Switch back to Admin in Profile to return.</p>
             </div>
           </div>
+          )}
         </>
       ) : appView === "files" ? (
         <main id="files-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">

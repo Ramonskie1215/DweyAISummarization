@@ -36,6 +36,8 @@ export default function App() {
   const [extractionProgress, setExtractionProgress] = useState<{ current: number; total: number } | null>(null);
   const [extractionError, setExtractionError] = useState<string | null>(null);
   const [isOcrScanning, setIsOcrScanning] = useState(false);
+  const [docRendering, setDocRendering] = useState(false);
+  const [focusedDocItem, setFocusedDocItem] = useState<number | null>(null);
 
   // AI Summarization options and states
   const [summaryLength, setSummaryLength] = useState<"Short" | "Medium" | "Detailed">("Medium");
@@ -48,7 +50,9 @@ export default function App() {
 
   // UI state
   const [activeTab, setActiveTab] = useState<"summary" | "raw_text">("summary");
-  const [rawTextMode, setRawTextMode] = useState<"full" | "page" | "layout">("page");
+  const [rawTextMode, setRawTextMode] = useState<"full" | "page" | "layout" | "document">("page");
+  const docCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfDocCacheRef = useRef<{ file: File; pdf: any } | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -187,6 +191,59 @@ export default function App() {
       setIsOcrScanning(false);
     }
   };
+
+  // Loads (and caches) the PDF document used by the Actual Document view
+  const getActualPdfDocument = async () => {
+    if (!file) throw new Error("No file selected");
+    if (pdfDocCacheRef.current && pdfDocCacheRef.current.file === file) {
+      return pdfDocCacheRef.current.pdf;
+    }
+    const pdfjsLib = (window as any).pdfjsLib;
+    if (!pdfjsLib) throw new Error("PDF.js library is not yet loaded.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    if (pdfDocCacheRef.current) {
+      try { pdfDocCacheRef.current.pdf.destroy(); } catch (_) {}
+    }
+    pdfDocCacheRef.current = { file, pdf };
+    return pdf;
+  };
+
+  // Renders the current PDF page whenever the Actual Document view is shown
+  useEffect(() => {
+    if (rawTextMode !== "document" || !file || !extractionResult) return;
+    let cancelled = false;
+    setDocRendering(true);
+    setFocusedDocItem(null);
+    (async () => {
+      try {
+        const pdf = await getActualPdfDocument();
+        const page = await pdf.getPage(currentPageIndex + 1);
+        const canvas = docCanvasRef.current;
+        if (!canvas || cancelled) return;
+        const renderWidth = Math.max(300, containerWidth - 48);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const dpr = window.devicePixelRatio || 1;
+        const viewport = page.getViewport({ scale: (renderWidth / baseViewport.width) * dpr });
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (!cancelled) setDocRendering(false);
+      } catch (renderError) {
+        console.warn("Could not render the PDF page:", renderError);
+        if (!cancelled) setDocRendering(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawTextMode, currentPageIndex, file, extractionResult, containerWidth]);
 
   // Summarize action
   const handleSummarize = async () => {
@@ -777,6 +834,17 @@ export default function App() {
                           <span>Visual Layout</span>
                         </button>
                         <button
+                          onClick={() => setRawTextMode("document")}
+                          className={`px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider rounded-md transition-all flex items-center gap-1 ${
+                            rawTextMode === "document"
+                              ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 shadow-xs"
+                              : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800"
+                          }`}
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Actual Document</span>
+                        </button>
+                        <button
                           onClick={() => setRawTextMode("full")}
                           className={`px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider rounded-md transition-all ${
                             rawTextMode === "full"
@@ -961,6 +1029,106 @@ export default function App() {
                             <span>Previous</span>
                           </button>
                           
+                          <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                            Page <span className="font-bold text-neutral-950 dark:text-neutral-50">{currentPageIndex + 1}</span> of <span className="font-bold text-neutral-950 dark:text-neutral-50">{extractionResult.pagesCount}</span>
+                          </span>
+
+                          <button
+                            onClick={() => setCurrentPageIndex((prev) => Math.min(extractionResult.pagesCount - 1, prev + 1))}
+                            disabled={currentPageIndex === extractionResult.pagesCount - 1}
+                            className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all flex items-center gap-1 text-xs font-semibold"
+                          >
+                            <span>Next</span>
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : rawTextMode === "document" ? (
+                      <div className="flex flex-col h-full justify-between gap-6">
+                        {/* Focused traced-text readout */}
+                        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-3 flex flex-wrap items-center gap-3 text-xs select-none min-h-[42px]">
+                          <span className="font-semibold text-neutral-600 dark:text-neutral-400 flex items-center gap-1.5 shrink-0">
+                            <Info className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" />
+                            Traced Text:
+                          </span>
+                          {focusedDocItem !== null && extractionResult.pageLayouts && extractionResult.pageLayouts[currentPageIndex] && extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem] ? (
+                            <span className="text-neutral-800 dark:text-neutral-200 font-medium break-all">
+                              {extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem].str}
+                            </span>
+                          ) : (
+                            <span className="text-neutral-400 dark:text-neutral-500 italic">Hover over the page to highlight each piece of traced text in place.</span>
+                          )}
+                        </div>
+
+                        <div className="flex-1 bg-neutral-200/50 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 flex justify-center items-start overflow-auto min-h-[400px]">
+                          {extractionResult.pageLayouts && extractionResult.pageLayouts[currentPageIndex] ? (
+                            (() => {
+                              const pageLayout = extractionResult.pageLayouts[currentPageIndex];
+                              const widthToHeightRatio = pageLayout.width / pageLayout.height;
+                              const renderWidth = Math.max(300, containerWidth - 48);
+                              const renderHeight = renderWidth / widthToHeightRatio;
+                              const scale = renderWidth / pageLayout.width;
+
+                              return (
+                                <div
+                                  className="relative bg-white dark:bg-neutral-800 shadow-md select-none rounded overflow-hidden shrink-0"
+                                  style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }}
+                                  id="actual-document-sheet"
+                                >
+                                  <canvas
+                                    ref={docCanvasRef}
+                                    style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }}
+                                    className="block"
+                                  />
+                                  {docRendering && (
+                                    <div className="absolute inset-0 bg-white/70 dark:bg-neutral-900/70 flex items-center justify-center">
+                                      <Loader2 className="w-5 h-5 animate-spin text-neutral-500" />
+                                    </div>
+                                  )}
+                                  {pageLayout.items.map((item, idx) => {
+                                    const isFocused = focusedDocItem === idx;
+                                    return (
+                                      <div
+                                        key={idx}
+                                        onMouseEnter={() => setFocusedDocItem(idx)}
+                                        onMouseLeave={() => setFocusedDocItem(null)}
+                                        className={`absolute cursor-pointer transition-colors duration-75 ${
+                                          isFocused
+                                            ? "bg-amber-300/50 border border-amber-500 z-10"
+                                            : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"
+                                        }`}
+                                        style={{
+                                          left: `${item.x * scale}px`,
+                                          top: `${item.y * scale}px`,
+                                          width: `${Math.max(item.width * scale, 4)}px`,
+                                          height: `${Math.max(item.height * scale, 6)}px`
+                                        }}
+                                        title={item.str}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <div className="text-center py-12 text-neutral-400 dark:text-neutral-500">
+                              <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                              <p className="text-xs">No traced text available for this page.</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Page Paging Controls */}
+                        <div className="flex items-center justify-between bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-3 shadow-sm shrink-0" id="paging-controls">
+                          <button
+                            onClick={() => setCurrentPageIndex((prev) => Math.max(0, prev - 1))}
+                            disabled={currentPageIndex === 0}
+                            className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all flex items-center gap-1 text-xs font-semibold"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                            <span>Previous</span>
+                          </button>
+
                           <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
                             Page <span className="font-bold text-neutral-950 dark:text-neutral-50">{currentPageIndex + 1}</span> of <span className="font-bold text-neutral-950 dark:text-neutral-50">{extractionResult.pagesCount}</span>
                           </span>

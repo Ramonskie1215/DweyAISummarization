@@ -207,6 +207,107 @@ ${text}
     }
   });
 
+  // Rooms: Admin hosts a room from selected uploaded files; Guest joins with a 6-digit code
+  const ROOMS_PATH = "rooms.json";
+  const roomGhConfig = () => {
+    const token = process.env.GITHUB_TOKEN;
+    const ghOwner = process.env.GITHUB_OWNER || "Ramonskie1215";
+    const ghRepo = process.env.GITHUB_REPO || "DweyAISummarization";
+    const ghHeaders: Record<string, string> = {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "dwey-ai-summarization",
+    };
+    if (token) ghHeaders["Authorization"] = `Bearer ${token}`;
+    return { token, ghOwner, ghRepo, ghHeaders };
+  };
+  const readRoomsStore = async () => {
+    const { ghOwner, ghRepo, ghHeaders } = roomGhConfig();
+    const res = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${ROOMS_PATH}`, { headers: ghHeaders });
+    if (res.status === 404) return { rooms: [] as any[], sha: undefined as string | undefined };
+    if (!res.ok) {
+      const details = await res.text();
+      throw new Error(`Could not read rooms (${res.status}): ${details}`);
+    }
+    const data: any = await res.json();
+    const raw = Buffer.from(String(data.content || "").replace(/\n/g, ""), "base64").toString("utf-8");
+    let parsed: any = {};
+    try { parsed = raw ? JSON.parse(raw) : {}; } catch (_) { parsed = {}; }
+    return { rooms: Array.isArray(parsed?.rooms) ? parsed.rooms : [], sha: data.sha as string | undefined };
+  };
+  const writeRoomsStore = async (rooms: any[], sha: string | undefined, message: string) => {
+    const { ghOwner, ghRepo, ghHeaders } = roomGhConfig();
+    const content = Buffer.from(JSON.stringify({ rooms }, null, 2) + "\n", "utf-8").toString("base64");
+    const putRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${ROOMS_PATH}`, {
+      method: "PUT",
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ message, content, ...(sha ? { sha } : {}) }),
+    });
+    if (!putRes.ok) {
+      const details = await putRes.text();
+      throw new Error(`Could not save room (${putRes.status}): ${details}`);
+    }
+    return putRes.json();
+  };
+  const normalizeRoomFiles = (input: any) => {
+    if (!Array.isArray(input)) return [] as any[];
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const item of input) {
+      const filePath = typeof item === "string" ? item : item?.path;
+      if (!filePath || typeof filePath !== "string") continue;
+      const cleanPath = filePath.trim();
+      if (!cleanPath.startsWith("uploaded/")) continue;
+      if (seen.has(cleanPath)) continue;
+      seen.add(cleanPath);
+      const name = (typeof item === "object" && item?.name) || cleanPath.split("/").pop() || cleanPath;
+      out.push({
+        name: String(name),
+        path: cleanPath,
+        size: typeof item === "object" && typeof item?.size === "number" ? item.size : 0,
+        uploadedAt: typeof item === "object" && item?.uploadedAt ? String(item.uploadedAt) : null,
+      });
+    }
+    return out;
+  };
+
+  app.get("/api/rooms", async (req, res) => {
+    try {
+      const code = String(req.query?.code || "").trim();
+      if (!/^\d{6}$/.test(code)) {
+        return res.status(400).json({ error: "Enter a valid 6-digit room code." });
+      }
+      const { rooms } = await readRoomsStore();
+      const room = rooms.find((r: any) => String(r?.code) === code);
+      if (!room) return res.status(404).json({ error: "Room not found. Check the code and try again." });
+      return res.json({ code: room.code, createdAt: room.createdAt || null, files: Array.isArray(room.files) ? room.files : [] });
+    } catch (error: any) {
+      console.error("[Rooms Exception]", error);
+      return res.status(500).json({ error: error.message || "An error occurred while working with rooms." });
+    }
+  });
+
+  app.post("/api/rooms", async (req, res) => {
+    try {
+      const { token } = roomGhConfig();
+      if (!token) return res.status(500).json({ error: "GITHUB_TOKEN is not configured on the server." });
+      const files = normalizeRoomFiles(req.body?.files);
+      if (files.length === 0) return res.status(400).json({ error: "Select at least one uploaded file for the room." });
+      const { rooms, sha } = await readRoomsStore();
+      const existing = new Set<string>(rooms.map((r: any) => String(r?.code)));
+      let code = String(Math.floor(100000 + Math.random() * 900000));
+      for (let i = 0; i < 20 && existing.has(code); i++) {
+        code = String(Math.floor(100000 + Math.random() * 900000));
+      }
+      const room = { code, files, createdAt: new Date().toISOString() };
+      await writeRoomsStore([...rooms, room], sha, `Create room ${code}`);
+      return res.json({ code: room.code, createdAt: room.createdAt, files: room.files });
+    } catch (error: any) {
+      console.error("[Rooms Exception]", error);
+      return res.status(500).json({ error: error.message || "An error occurred while working with rooms." });
+    }
+  });
+
   // Vite integration
   if (process.env.NODE_ENV !== "production") {
     console.log("Setting up Vite server in development mode...");

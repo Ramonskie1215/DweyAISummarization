@@ -5,7 +5,7 @@ const OCR_TEXT_THRESHOLD = 30;
 /**
  * Renders a PDF.js page to a canvas so Tesseract can OCR it.
  */
-async function renderPageToCanvas(page: any): Promise<HTMLCanvasElement> {
+async function renderPageToCanvas(page: any): Promise<{ canvas: HTMLCanvasElement; scale: number }> {
   const baseViewport = page.getViewport({ scale: 1 });
   const scale = Math.min(4, (1400 / baseViewport.width) * 2);
   const viewport = page.getViewport({ scale });
@@ -17,7 +17,7 @@ async function renderPageToCanvas(page: any): Promise<HTMLCanvasElement> {
     throw new Error("Canvas 2D context is not available");
   }
   await page.render({ canvasContext: ctx, viewport }).promise;
-  return canvas;
+  return { canvas, scale };
 }
 
 export interface PDFTextItem {
@@ -45,6 +45,33 @@ export interface PDFParseResult {
     producer?: string;
   };
   pageLayouts?: PDFPageLayout[];
+}
+
+/**
+ * Converts Tesseract word bounding boxes (image pixels, top-left origin)
+ * into the page-layout items used by the app (PDF points, top-left origin).
+ */
+function ocrWordsToLayoutItems(data: any, scale: number): PDFTextItem[] {
+  const words: any[] = [];
+  for (const block of (data && data.blocks) || []) {
+    for (const paragraph of block.paragraphs || []) {
+      for (const line of paragraph.lines || []) {
+        for (const word of line.words || []) {
+          words.push(word);
+        }
+      }
+    }
+  }
+  const source = words.length ? words : ((data && data.words) || []);
+  return source
+    .filter((w: any) => w && w.text && w.text.trim() !== "" && w.bbox)
+    .map((w: any) => ({
+      str: w.text,
+      x: Math.max(0, w.bbox.x0 / scale),
+      y: Math.max(0, w.bbox.y0 / scale),
+      width: Math.max(0, (w.bbox.x1 - w.bbox.x0) / scale),
+      height: Math.max(0, (w.bbox.y1 - w.bbox.y0) / scale),
+    }));
 }
 
 /**
@@ -119,6 +146,7 @@ export async function extractTextFromPDF(
             .trim();
           
           let finalPageText = pageText;
+          let ocrLayoutItems: PDFTextItem[] | null = null;
 
           // Image-only (scanned) page: little or no extractable text -> fall back to OCR
           if (pageText.length < OCR_TEXT_THRESHOLD) {
@@ -141,11 +169,13 @@ export async function extractTextFromPDF(
                 ocrWasUsed = true;
                 if (onOcrStatus) onOcrStatus(true);
               }
-              const canvas = await renderPageToCanvas(page);
-              const { data: { text: ocrText } } = await ocrWorker.recognize(canvas);
-              const cleanOcrText = (ocrText || "").replace(/\s+/g, " ").trim();
+              const { canvas, scale } = await renderPageToCanvas(page);
+              const { data } = await ocrWorker.recognize(canvas, {}, { blocks: true });
+              const cleanOcrText = (data.text || "").replace(/\s+/g, " ").trim();
               if (cleanOcrText.length >= finalPageText.length) {
                 finalPageText = cleanOcrText;
+                // Keep coordinates too, so the layout view works for scanned pages
+                ocrLayoutItems = ocrWordsToLayoutItems(data, scale);
               }
             } catch (ocrError) {
               console.warn(`OCR fallback failed for page ${i}:`, ocrError);
@@ -179,7 +209,7 @@ export async function extractTextFromPDF(
           pageLayouts.push({
             width: pageWidth,
             height: pageHeight,
-            items: layoutItems
+            items: ocrLayoutItems && ocrLayoutItems.length ? ocrLayoutItems : layoutItems
           });
 
           if (onProgress) {

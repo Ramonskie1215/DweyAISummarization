@@ -81,6 +81,7 @@ export default function App() {
   const [companionSaved, setCompanionSaved] = useState(false);
   const [isSavingTraces, setIsSavingTraces] = useState(false);
   const [traceBoxesSaved, setTraceBoxesSaved] = useState(false);
+  const [showUploadSummary, setShowUploadSummary] = useState(false);
   const [uploadAutoError, setUploadAutoError] = useState<string | null>(null);
   const [selectedGuestFile, setSelectedGuestFile] = useState<RoomFileItem | null>(null);
   const [guestSummary, setGuestSummary] = useState<string | null>(null);
@@ -758,6 +759,7 @@ export default function App() {
     setUploadAutoError(null);
     setCompanionSaved(false);
     setTraceBoxesSaved(false);
+    setShowUploadSummary(false);
     setSummaryResult(null);
     const result = await processFile(selectedFile);
     if (!result) return;
@@ -787,6 +789,7 @@ export default function App() {
     setUploadAutoError(null);
     setCompanionSaved(false);
     setTraceBoxesSaved(false);
+    setShowUploadSummary(false);
     setIsUploadModalOpen(true);
   };
 
@@ -2431,10 +2434,13 @@ export default function App() {
                       <CheckCircle className="w-4 h-4" />
                       <span>Done — summary & trace boxes saved with this file</span>
                     </div>
-                    <div className="mt-3 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 max-h-64 overflow-y-auto prose prose-neutral prose-sm max-w-none" id="upload-modal-summary-preview">
-                      <Markdown>{summaryResult}</Markdown>
-                    </div>
-                    <button type="button" onClick={closeUploadModal} className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm hover:opacity-90 transition-opacity" id="upload-modal-done-btn">Done</button>
+                    {showUploadSummary ? (
+                      <div className="mt-3 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 max-h-64 overflow-y-auto prose prose-neutral prose-sm max-w-none" id="upload-modal-summary-preview">
+                        <Markdown>{summaryResult}</Markdown>
+                      </div>
+                    ) : null}
+                    <button type="button" onClick={() => setShowUploadSummary((prev) => !prev)} className="mt-4 w-full border border-neutral-200 dark:border-neutral-700 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors" id="toggle-upload-summary-btn">{showUploadSummary ? "Hide AI Summarize" : "Show AI Summarize"}</button>
+                    <button type="button" onClick={closeUploadModal} className="mt-3 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm hover:opacity-90 transition-opacity" id="upload-modal-done-btn">Done</button>
                   </div>
                 ) : extractionResult && !isSummarizing && !isSavingCompanion && !isSavingTraces ? (
                   <button type="button" onClick={retryUploadAutoSummary} className="w-full border border-neutral-200 dark:border-neutral-700 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors" id="upload-modal-retry-btn">Retry processing</button>

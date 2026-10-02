@@ -1,6 +1,6 @@
 {
-  "name": "PDF Extractor & Summarizer",
-  "description": "Upload any PDF, instantly extract its text, and generate beautifully formatted, structured summaries using AI.",
+  "name": "EcoLegis",
+  "description": "Legislative Document Management & AI Summary System",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

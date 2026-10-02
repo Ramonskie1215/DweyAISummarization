@@ -271,16 +271,33 @@ ${text}
     return out;
   };
 
+
+  const publicRoom = (room: any) => {
+    const startedAt = room?.startedAt || room?.createdAt || null;
+    return {
+      code: String(room?.code || ""),
+      createdAt: startedAt,
+      startedAt,
+      endedAt: room?.endedAt || null,
+      files: Array.isArray(room?.files) ? room.files : [],
+    };
+  };
+
   app.get("/api/rooms", async (req, res) => {
     try {
       const code = String(req.query?.code || "").trim();
+      const { rooms } = await readRoomsStore();
+      if (!code) {
+        const history = [...rooms].sort((a: any, b: any) => String(b?.startedAt || b?.createdAt || "").localeCompare(String(a?.startedAt || a?.createdAt || ""))).map(publicRoom);
+        return res.json({ rooms: history });
+      }
       if (!/^\d{6}$/.test(code)) {
         return res.status(400).json({ error: "Enter a valid 6-digit room code." });
       }
-      const { rooms } = await readRoomsStore();
       const room = rooms.find((r: any) => String(r?.code) === code);
       if (!room) return res.status(404).json({ error: "Room not found. Check the code and try again." });
-      return res.json({ code: room.code, createdAt: room.createdAt || null, files: Array.isArray(room.files) ? room.files : [] });
+      if (room.endedAt) return res.status(410).json({ error: "This room has ended." });
+      return res.json(publicRoom(room));
     } catch (error: any) {
       console.error("[Rooms Exception]", error);
       return res.status(500).json({ error: error.message || "An error occurred while working with rooms." });
@@ -291,6 +308,18 @@ ${text}
     try {
       const { token } = roomGhConfig();
       if (!token) return res.status(500).json({ error: "GITHUB_TOKEN is not configured on the server." });
+      if (String(req.body?.action || "") === "end") {
+        const code = String(req.body?.code || "").trim();
+        if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: "Enter a valid 6-digit room code." });
+        const { rooms, sha } = await readRoomsStore();
+        const idx = rooms.findIndex((r: any) => String(r?.code) === code);
+        if (idx === -1) return res.status(404).json({ error: "Room not found. Check the code and try again." });
+        if (!rooms[idx].endedAt) {
+          rooms[idx] = { ...rooms[idx], endedAt: new Date().toISOString() };
+          await writeRoomsStore(rooms, sha, `End room ${code}`);
+        }
+        return res.json(publicRoom(rooms[idx]));
+      }
       const files = normalizeRoomFiles(req.body?.files);
       if (files.length === 0) return res.status(400).json({ error: "Select at least one uploaded file for the room." });
       const { rooms, sha } = await readRoomsStore();
@@ -299,9 +328,10 @@ ${text}
       for (let i = 0; i < 20 && existing.has(code); i++) {
         code = String(Math.floor(100000 + Math.random() * 900000));
       }
-      const room = { code, files, createdAt: new Date().toISOString() };
+      const now = new Date().toISOString();
+      const room = { code, files, createdAt: now, startedAt: now, endedAt: null };
       await writeRoomsStore([...rooms, room], sha, `Create room ${code}`);
-      return res.json({ code: room.code, createdAt: room.createdAt, files: room.files });
+      return res.json(publicRoom(room));
     } catch (error: any) {
       console.error("[Rooms Exception]", error);
       return res.status(500).json({ error: error.message || "An error occurred while working with rooms." });

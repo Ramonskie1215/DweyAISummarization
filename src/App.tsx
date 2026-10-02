@@ -482,8 +482,8 @@ export default function App() {
             <BookOpen className="w-6 h-6" id="header-logo-icon" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100" id="header-title">PDF Extractor & Summarizer</h1>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400" id="header-subtitle">Extract text and summarize instantly with AI</p>
+            <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100" id="header-title">EcoLegis</h1>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400" id="header-subtitle">Legislative Document Management & AI Summary System</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1478,7 +1478,7 @@ export default function App() {
       {profileRole !== "Guest" && (
       <footer id="app-footer" className="bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 py-6 px-6 md:px-12 mt-12 shrink-0 text-center sm:text-left">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-neutral-400 dark:text-neutral-500">
-          <p>© 2026 PDF Extractor & Summarizer App. Powered by DeepSeek API via APMix.</p>
+          <p>© 2026 EcoLegis. Powered by DeepSeek API via APMix.</p>
           <div className="flex gap-4">
             <span className="hover:text-neutral-600 cursor-help" title="Converts pages locally using HTML5 Canvas text rendering contexts">Client-Side Parser</span>
             <span>•</span>

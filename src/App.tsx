@@ -33,6 +33,15 @@ import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
 import { extractTextFromPDF, PDFParseResult } from "./utils/pdfParser";
 
+const FIXED_SUMMARY_SETTINGS = {
+  length: "Detailed",
+  style: "Professional Academic Summary",
+  language: "en",
+  format: "page-ranges",
+} as const;
+
+type RoomFileItem = { name: string; size: number; path: string; uploadedAt?: string | null };
+
 export default function App() {
   // File and extraction states
   const [file, setFile] = useState<File | null>(null);
@@ -67,6 +76,20 @@ export default function App() {
   const [guestRoom, setGuestRoom] = useState<{ code: string; createdAt?: string | null; startedAt?: string | null; endedAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [joinRoomError, setJoinRoomError] = useState<string | null>(null);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isSavingCompanion, setIsSavingCompanion] = useState(false);
+  const [companionSaved, setCompanionSaved] = useState(false);
+  const [uploadAutoError, setUploadAutoError] = useState<string | null>(null);
+  const [selectedGuestFile, setSelectedGuestFile] = useState<RoomFileItem | null>(null);
+  const [guestSummary, setGuestSummary] = useState<string | null>(null);
+  const [guestSummaryError, setGuestSummaryError] = useState<string | null>(null);
+  const [guestPdfFile, setGuestPdfFile] = useState<File | null>(null);
+  const [guestDocResult, setGuestDocResult] = useState<PDFParseResult | null>(null);
+  const [guestDocLoading, setGuestDocLoading] = useState(false);
+  const [guestDocError, setGuestDocError] = useState<string | null>(null);
+  const [guestPageIndex, setGuestPageIndex] = useState(0);
+  const [guestDocRendering, setGuestDocRendering] = useState(false);
+  const [guestFocusedItem, setGuestFocusedItem] = useState<number | null>(null);
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -85,6 +108,10 @@ export default function App() {
   const [rawTextMode, setRawTextMode] = useState<"full" | "page" | "layout" | "document">("page");
   const docCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfDocCacheRef = useRef<{ file: File; pdf: any } | null>(null);
+  const uploadModalInputRef = useRef<HTMLInputElement>(null);
+  const guestCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const guestPdfCacheRef = useRef<{ file: File; pdf: any } | null>(null);
+  const guestDocWrapRef = useRef<HTMLDivElement>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -220,9 +247,11 @@ export default function App() {
         }
       );
       setExtractionResult(result);
+      return result;
     } catch (err: any) {
       console.error(err);
       setExtractionError(err.message || "An error occurred while parsing the PDF.");
+      return null;
     } finally {
       setIsExtracting(false);
       setIsOcrScanning(false);
@@ -540,10 +569,242 @@ export default function App() {
 
   const leaveGuestRoom = () => {
     setGuestRoom(null);
+    setSelectedGuestFile(null);
+    setGuestSummary(null);
+    setGuestPdfFile(null);
+    setGuestDocResult(null);
     setRoomCode("");
     setJoinRoomError(null);
     setIsRoomCodeModalOpen(false);
   };
+
+
+  const getUploadedRepoPath = (fileName: string) => {
+    const baseName = String(fileName).split(/[\\/]/).pop() || "upload.pdf";
+    const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, "_") || "upload.pdf";
+    return `uploaded/${safeName}`;
+  };
+
+  const generateFixedSummary = async (result: PDFParseResult) => {
+    setIsSummarizing(true);
+    setSummarizationError(null);
+    try {
+      const pagedText = result.pages.map((pageText, idx) => `[Page ${idx + 1}]\n${pageText || ""}`).join("\n\n");
+      const response = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: pagedText,
+          length: FIXED_SUMMARY_SETTINGS.length,
+          style: FIXED_SUMMARY_SETTINGS.style,
+          language: FIXED_SUMMARY_SETTINGS.language,
+          format: FIXED_SUMMARY_SETTINGS.format,
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMsg = `Server responded with status ${response.status}`;
+        try {
+          const errData = JSON.parse(errorText);
+          if (errData && errData.error) errorMsg = errData.error;
+        } catch (_) {}
+        throw new Error(errorMsg);
+      }
+      const data = await response.json();
+      if (!data.summary) throw new Error("No summary was returned.");
+      setSummaryResult(data.summary);
+      return String(data.summary);
+    } catch (err: any) {
+      console.error("Fixed summarization failure:", err);
+      setSummarizationError(err.message || "Failed to generate AI summary.");
+      throw err;
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const saveCompanionSummary = async (selectedFile: File, result: PDFParseResult, summary: string) => {
+    setIsSavingCompanion(true);
+    setCompanionSaved(false);
+    try {
+      const filePath = getUploadedRepoPath(selectedFile.name);
+      const res = await fetch("/api/companion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filePath,
+          fileName: filePath.split("/").pop() || selectedFile.name,
+          fileSize: selectedFile.size,
+          pagesCount: result.pagesCount,
+          summary,
+          settings: FIXED_SUMMARY_SETTINGS,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+      setCompanionSaved(true);
+      return data;
+    } finally {
+      setIsSavingCompanion(false);
+    }
+  };
+
+  const runUploadAutoProcess = async (selectedFile: File) => {
+    setUploadAutoError(null);
+    setCompanionSaved(false);
+    setSummaryResult(null);
+    const result = await processFile(selectedFile);
+    if (!result) return;
+    try {
+      const summary = await generateFixedSummary(result);
+      await saveCompanionSummary(selectedFile, result, summary);
+      fetchAdminFiles().catch(() => {});
+    } catch (err: any) {
+      setUploadAutoError(err.message || "Could not finish processing this file.");
+    }
+  };
+
+  const retryUploadAutoSummary = async () => {
+    if (!file || !extractionResult) return;
+    setUploadAutoError(null);
+    try {
+      const summary = await generateFixedSummary(extractionResult);
+      await saveCompanionSummary(file, extractionResult, summary);
+      fetchAdminFiles().catch(() => {});
+    } catch (err: any) {
+      setUploadAutoError(err.message || "Could not finish processing this file.");
+    }
+  };
+
+  const openUploadModal = () => {
+    resetAll();
+    setUploadAutoError(null);
+    setCompanionSaved(false);
+    setIsUploadModalOpen(true);
+  };
+
+  const closeUploadModal = () => {
+    if (isExtracting || isSummarizing || isSavingCompanion) return;
+    setIsUploadModalOpen(false);
+    fetchAdminFiles().catch(() => {});
+  };
+
+  const handleUploadModalFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) await runUploadAutoProcess(files[0]);
+    e.target.value = "";
+  };
+
+  const handleUploadModalDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragActive(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const selectedFile = files[0];
+      if (selectedFile.type === "application/pdf" || selectedFile.name.endsWith(".pdf")) {
+        await runUploadAutoProcess(selectedFile);
+      } else {
+        setExtractionError("Please select a valid PDF file.");
+      }
+    }
+  };
+
+
+  const closeGuestDocument = () => {
+    setSelectedGuestFile(null);
+    setGuestSummary(null);
+    setGuestSummaryError(null);
+    setGuestPdfFile(null);
+    setGuestDocResult(null);
+    setGuestDocError(null);
+    setGuestPageIndex(0);
+    setGuestFocusedItem(null);
+  };
+
+  const openGuestDocument = async (roomFile: RoomFileItem) => {
+    setSelectedGuestFile(roomFile);
+    setGuestPageIndex(0);
+    setGuestSummary(null);
+    setGuestSummaryError(null);
+    setGuestDocResult(null);
+    setGuestPdfFile(null);
+    setGuestDocError(null);
+    setGuestDocLoading(true);
+    try {
+      // Saved AI summary (companion file) — no need to call AI again.
+      try {
+        const summaryRes = await fetch(`/api/companion?path=${encodeURIComponent(roomFile.path)}`);
+        const summaryData = await summaryRes.json().catch(() => ({}));
+        if (summaryRes.ok && summaryData.summary) setGuestSummary(String(summaryData.summary));
+        else setGuestSummaryError(summaryData?.error || "No AI summary saved for this file yet.");
+      } catch (_) {
+        setGuestSummaryError("No AI summary saved for this file yet.");
+      }
+
+      const rawUrl = `https://raw.githubusercontent.com/Ramonskie1215/DweyAISummarization/main/${roomFile.path.split("/").map(encodeURIComponent).join("/")}`;
+      const pdfRes = await fetch(rawUrl);
+      if (!pdfRes.ok) throw new Error(`Could not load the document file (status ${pdfRes.status}).`);
+      const blob = await pdfRes.blob();
+      const pdfFile = new File([blob], roomFile.name, { type: "application/pdf" });
+      setGuestPdfFile(pdfFile);
+      const result = await extractTextFromPDF(pdfFile);
+      setGuestDocResult(result);
+    } catch (err: any) {
+      console.error("Failed to open guest document:", err);
+      setGuestDocError(err.message || "Could not open this document.");
+    } finally {
+      setGuestDocLoading(false);
+    }
+  };
+
+  const getGuestPdfDocument = async () => {
+    if (!guestPdfFile) throw new Error("No document loaded");
+    if (guestPdfCacheRef.current && guestPdfCacheRef.current.file === guestPdfFile) {
+      return guestPdfCacheRef.current.pdf;
+    }
+    const pdfjsLib = (window as any).pdfjsLib;
+    if (!pdfjsLib) throw new Error("PDF.js library is not yet loaded.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+    const buffer = await guestPdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    if (guestPdfCacheRef.current) {
+      try { guestPdfCacheRef.current.pdf.destroy(); } catch (_) {}
+    }
+    guestPdfCacheRef.current = { file: guestPdfFile, pdf };
+    return pdf;
+  };
+
+  useEffect(() => {
+    if (!selectedGuestFile || !guestPdfFile || !guestDocResult) return;
+    let cancelled = false;
+    setGuestDocRendering(true);
+    setGuestFocusedItem(null);
+    (async () => {
+      try {
+        const pdf = await getGuestPdfDocument();
+        const page = await pdf.getPage(guestPageIndex + 1);
+        const canvas = guestCanvasRef.current;
+        if (!canvas || cancelled) return;
+        const wrapWidth = guestDocWrapRef.current?.clientWidth || 720;
+        const renderWidth = Math.max(300, wrapWidth - 32);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const dpr = window.devicePixelRatio || 1;
+        const viewport = page.getViewport({ scale: (renderWidth / baseViewport.width) * dpr });
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (!cancelled) setGuestDocRendering(false);
+      } catch (err) {
+        console.warn("Could not render guest document page:", err);
+        if (!cancelled) setGuestDocRendering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedGuestFile, guestPdfFile, guestDocResult, guestPageIndex]);
 
   // Summarize action
   const handleSummarize = async () => {
@@ -724,7 +985,101 @@ export default function App() {
       {/* MAIN LAYOUT */}
       {profileRole === "Guest" ? (
         <>
-          {guestRoom ? (
+          {selectedGuestFile ? (
+            <main id="guest-document-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
+              <div className="flex items-center gap-3 mb-4">
+                <button type="button" onClick={closeGuestDocument} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all" id="back-to-guest-room-btn">
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Back to Room Files</span>
+                </button>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate" title={selectedGuestFile.name}>{selectedGuestFile.name}</p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">Room {guestRoom?.code} · {formatUploadedDateTime(selectedGuestFile.uploadedAt)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start flex-1">
+                <section className="lg:col-span-7 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm overflow-hidden" id="guest-actual-document-panel">
+                  <div className="px-5 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      <span>Actual Document</span>
+                    </h2>
+                    {guestDocResult && <span className="text-xs text-neutral-500">Page {guestPageIndex + 1} of {guestDocResult.pagesCount}</span>}
+                  </div>
+                  <div ref={guestDocWrapRef} className="p-4 bg-neutral-100 dark:bg-neutral-950">
+                    {guestDocLoading ? (
+                      <div className="py-16 flex flex-col items-center justify-center text-neutral-400">
+                        <Loader2 className="w-7 h-7 animate-spin mb-3" />
+                        <p className="text-xs">Loading document…</p>
+                      </div>
+                    ) : guestDocError ? (
+                      <div className="py-12 flex flex-col items-center justify-center text-center text-red-600 dark:text-red-400">
+                        <AlertCircle className="w-7 h-7 mb-2" />
+                        <p className="text-sm font-semibold">Could not open this document</p>
+                        <p className="text-xs mt-1 max-w-sm">{guestDocError}</p>
+                      </div>
+                    ) : guestDocResult && guestDocResult.pageLayouts && guestDocResult.pageLayouts[guestPageIndex] ? (
+                      (() => {
+                        const pageLayout = guestDocResult.pageLayouts[guestPageIndex];
+                        const wrapW = guestDocWrapRef.current?.clientWidth || 720;
+                        const renderWidth = Math.max(300, wrapW - 32);
+                        const renderHeight = renderWidth / (pageLayout.width / pageLayout.height);
+                        const scale = renderWidth / pageLayout.width;
+                        return (
+                          <div className="relative bg-white shadow-md rounded overflow-hidden mx-auto" style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} id="guest-actual-document-sheet">
+                            <canvas ref={guestCanvasRef} style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} className="block" />
+                            {guestDocRendering && (
+                              <div className="absolute inset-0 bg-white/70 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-neutral-500" /></div>
+                            )}
+                            {pageLayout.items.map((item, idx) => (
+                              <div key={idx} onMouseEnter={() => setGuestFocusedItem(idx)} onMouseLeave={() => setGuestFocusedItem(null)} title={item.str} className={`absolute cursor-pointer transition-colors ${guestFocusedItem === idx ? "bg-amber-300/50 border border-amber-500 z-10" : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"}`} style={{ left: `${item.x * scale}px`, top: `${item.y * scale}px`, width: `${Math.max(item.width * scale, 4)}px`, height: `${Math.max(item.height * scale, 6)}px` }} />
+                            ))}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="py-12 text-center text-neutral-400 text-xs">No document preview available.</div>
+                    )}
+                  </div>
+                  {guestFocusedItem !== null && guestDocResult?.pageLayouts?.[guestPageIndex]?.items?.[guestFocusedItem] && (
+                    <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-400 truncate">
+                      <span className="font-semibold">Traced Text:</span> {guestDocResult.pageLayouts[guestPageIndex].items[guestFocusedItem].str}
+                    </div>
+                  )}
+                  {guestDocResult && guestDocResult.pagesCount > 1 && (
+                    <div className="flex items-center justify-between p-3 border-t border-neutral-200 dark:border-neutral-800">
+                      <button type="button" onClick={() => setGuestPageIndex((prev) => Math.max(0, prev - 1))} disabled={guestPageIndex === 0} className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1 text-xs font-semibold" id="guest-doc-prev-btn"><ChevronLeft className="w-4 h-4" /><span>Previous</span></button>
+                      <span className="text-xs text-neutral-500">Page <b>{guestPageIndex + 1}</b> of <b>{guestDocResult.pagesCount}</b></span>
+                      <button type="button" onClick={() => setGuestPageIndex((prev) => Math.min(guestDocResult.pagesCount - 1, prev + 1))} disabled={guestPageIndex === guestDocResult.pagesCount - 1} className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1 text-xs font-semibold" id="guest-doc-next-btn"><span>Next</span><ChevronRight className="w-4 h-4" /></button>
+                    </div>
+                  )}
+                </section>
+
+                <aside className="lg:col-span-5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm overflow-hidden" id="guest-ai-summary-panel">
+                  <div className="px-5 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      <span>AI Summary</span>
+                    </h2>
+                  </div>
+                  <div className="p-5 overflow-y-auto max-h-[720px]">
+                    {guestDocLoading && !guestSummary ? (
+                      <div className="py-10 flex flex-col items-center text-neutral-400"><Loader2 className="w-6 h-6 animate-spin mb-2" /><p className="text-xs">Loading summary…</p></div>
+                    ) : guestSummary ? (
+                      <div className="prose prose-neutral prose-sm max-w-none" id="guest-ai-summary-content"><Markdown>{guestSummary}</Markdown></div>
+                    ) : (
+                      <div className="py-8 text-center text-neutral-400">
+                        <Sparkles className="w-8 h-8 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">No AI summary saved yet</p>
+                        <p className="text-xs mt-1">{guestSummaryError || "This file was uploaded before saved summaries, so there is nothing to show yet."}</p>
+                      </div>
+                    )}
+                  </div>
+                </aside>
+              </div>
+            </main>
+          ) : guestRoom ? (
             <main id="guest-room-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
               <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="guest-room-panel">
                 <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
@@ -733,7 +1088,7 @@ export default function App() {
                       <KeyRound className="w-4 h-4" />
                       <span>Room {guestRoom.code}</span>
                     </h2>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Files shared in this room.</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Files shared in this room. Click a file to view it.</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
@@ -770,7 +1125,7 @@ export default function App() {
                         </div>
                         <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
                           {group.files.map((f) => (
-                            <li key={f.path} className="flex items-center gap-3 px-5 py-3">
+                            <li key={f.path} onClick={() => openGuestDocument(f)} className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors" title="Click to view document">
                               <div className="p-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg shrink-0">
                                 <FileText className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
                               </div>
@@ -779,6 +1134,7 @@ export default function App() {
                                 <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate" title={f.uploadedAt || undefined}>{formatUploadedDateTime(f.uploadedAt)}</p>
                               </div>
                               <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">{formatFileSize(f.size)}</span>
+                              <ChevronRight className="w-4 h-4 text-neutral-300 dark:text-neutral-600 shrink-0" />
                             </li>
                           ))}
                         </ul>
@@ -916,7 +1272,7 @@ export default function App() {
                   <span>History</span>
                 </button>
                 <button
-                  onClick={() => setAppView("upload")}
+                  onClick={openUploadModal}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
                   id="open-upload-ui-btn"
                 >
@@ -1870,6 +2226,105 @@ export default function App() {
           </div>
         </div>
       </footer>
+      )}
+
+
+      {isUploadModalOpen && (
+        <div id="upload-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="upload-modal-title" className="relative w-full max-w-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6 max-h-[90vh] overflow-y-auto" id="upload-modal">
+            <button
+              type="button"
+              onClick={closeUploadModal}
+              disabled={isExtracting || isSummarizing || isSavingCompanion}
+              className="absolute top-3 right-3 p-1.5 rounded-full text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 transition-colors cursor-pointer"
+              aria-label="Close upload"
+              title="Close"
+              id="close-upload-modal-btn"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="w-11 h-11 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-300 mb-4">
+              <UploadCloud className="w-5 h-5" />
+            </div>
+            <h2 id="upload-modal-title" className="text-base font-bold text-neutral-900 dark:text-neutral-100">Upload Document</h2>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">We will extract the text, create the AI summary, and save it with the file. AI settings are fixed.</p>
+
+            <input type="file" ref={uploadModalInputRef} onChange={handleUploadModalFileChange} accept=".pdf" className="hidden" id="upload-modal-file-input" />
+
+            {!file ? (
+              <div
+                id="upload-modal-drop-zone"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleUploadModalDrop}
+                onClick={() => uploadModalInputRef.current?.click()}
+                className={`mt-5 border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 ${isDragActive ? "border-neutral-900 dark:border-neutral-100 bg-neutral-50 dark:bg-neutral-950" : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 hover:bg-neutral-50/50"}`}
+              >
+                <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-4 text-neutral-600 dark:text-neutral-400">
+                  <UploadCloud className="w-6 h-6" />
+                </div>
+                <h3 className="font-medium text-neutral-900 dark:text-neutral-100 mb-1">Click to upload or drag & drop</h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-[260px]">Supports any PDF file up to 50MB</p>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-4">
+                <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 bg-neutral-50 dark:bg-neutral-950 flex items-start gap-3">
+                  <div className="p-2.5 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg shrink-0">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate" title={file.name}>{file.name}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{(file.size / (1024 * 1024)).toFixed(2)} MB{extractionResult ? ` · ${extractionResult.pagesCount} pages` : ""}</p>
+                  </div>
+                </div>
+
+                <ol className="space-y-2 text-sm" id="upload-auto-steps">
+                  <li className="flex items-center gap-2">
+                    {isExtracting ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : extractionResult ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />}
+                    <span>Extracting text{isOcrScanning ? " (scanning pages…)" : ""}</span>
+                    {isExtracting && extractionProgress ? <span className="text-xs text-neutral-400 ml-auto">{Math.floor(extractionProgress.current)} / {extractionProgress.total}</span> : null}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {isSummarizing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : summaryResult ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />}
+                    <span>Generating AI summary</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {isSavingCompanion ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : companionSaved ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />}
+                    <span>Saving summary with the file</span>
+                  </li>
+                </ol>
+
+                {isExtracting && extractionProgress && (
+                  <div className="w-full bg-neutral-100 dark:bg-neutral-800 rounded-full h-2 overflow-hidden">
+                    <div className="bg-neutral-900 dark:bg-neutral-100 h-full transition-all duration-200 rounded-full" style={{ width: `${(extractionProgress.current / extractionProgress.total) * 100}%` }} />
+                  </div>
+                )}
+
+                {(extractionError || summarizationError || uploadAutoError) && (
+                  <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-3 text-xs text-red-700 dark:text-red-300">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{uploadAutoError || extractionError || summarizationError}</span>
+                  </div>
+                )}
+
+                {summaryResult && companionSaved ? (
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Done — summary saved with this file</span>
+                    </div>
+                    <div className="mt-3 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 max-h-64 overflow-y-auto prose prose-neutral prose-sm max-w-none" id="upload-modal-summary-preview">
+                      <Markdown>{summaryResult}</Markdown>
+                    </div>
+                    <button type="button" onClick={closeUploadModal} className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm hover:opacity-90 transition-opacity" id="upload-modal-done-btn">Done</button>
+                  </div>
+                ) : extractionResult && !isSummarizing && !isSavingCompanion ? (
+                  <button type="button" onClick={retryUploadAutoSummary} className="w-full border border-neutral-200 dark:border-neutral-700 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors" id="upload-modal-retry-btn">Retry AI Summary</button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {isRoomHistoryOpen && (

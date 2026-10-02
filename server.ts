@@ -21,7 +21,7 @@ async function startServer() {
   // Secure API Proxy endpoint to process text with deepseek/deepseek-v4-flash-free on api.apmix.ai
   app.post("/api/summarize", async (req, res) => {
     try {
-      const { text, model, prompt, length, style, language } = req.body;
+      const { text, model, prompt, length, style, language, format } = req.body;
       if (!text || typeof text !== "string" || text.trim() === "") {
         return res.status(400).json({ error: "Text content is required for summarization." });
       }
@@ -35,7 +35,20 @@ async function startServer() {
 
       const systemPrompt = "You are an expert document assistant. You analyze extracted PDF text and produce beautifully formatted, highly informative summaries using clear Markdown hierarchy. Focus on accuracy and structure.";
       
-      const basePrompt = prompt || `You are given a text extracted from a PDF. Please read it thoroughly and produce a highly professional, beautifully structured markdown summary.
+      const fixedPageRangePrompt = format === "page-ranges" ? `You are given text extracted from a PDF, split into pages with [Page N] markers. Produce a summary in this exact Markdown format:
+
+## General Summary
+Give a clear general summary of the whole file: what it is about, its main purpose, and the most important points.
+
+## Page Range Breakdown
+Look at the context of each page. If the file has different contexts/topics in different parts, group consecutive pages that share the same context into page ranges (for example, Pages 1-3, Pages 4-6) and describe what is on that specific range of pages. If the whole file shares one context, write a single entry for Pages 1 to the last page.
+Use only page numbers that appear in the [Page N] markers. Do not invent pages or content.
+
+Text to analyze, by page:
+--------------------------------------
+${text}
+--------------------------------------` : null;
+      const basePrompt = fixedPageRangePrompt || prompt || `You are given a text extracted from a PDF. Please read it thoroughly and produce a highly professional, beautifully structured markdown summary.
 
 Please follow these exact requirements:
 - **Summary Length**: ${summaryLengthText} (Please adapt details accordingly)
@@ -117,7 +130,7 @@ ${text}
       }
       const items: any = await listRes.json();
       const files = (Array.isArray(items) ? items : [])
-        .filter((it: any) => it && it.type === "file")
+        .filter((it: any) => it && it.type === "file" && !String(it.name || "").endsWith(".summary.json") && !String(it.name || "").endsWith(".summary.md"))
         .map((it: any) => ({
           name: it.name,
           size: it.size,
@@ -207,6 +220,104 @@ ${text}
     }
   });
 
+
+  // Companion AI summary for an uploaded document (saved once, read by Guests)
+  const COMPANION_SUFFIX = ".summary.json";
+  const companionPathFor = (filePath: string) => {
+    const clean = String(filePath || "").trim();
+    if (!clean.startsWith("uploaded/") || clean.includes("..")) return null;
+    return clean.endsWith(COMPANION_SUFFIX) ? clean : `${clean}${COMPANION_SUFFIX}`;
+  };
+  const readCompanionFile = async (path: string) => {
+    const { ghOwner, ghRepo, ghHeaders } = roomGhConfigLike();
+    const res = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`, { headers: ghHeaders });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const details = await res.text();
+      throw new Error(`GitHub read failed (${res.status}): ${details}`);
+    }
+    return res.json();
+  };
+  // roomGhConfigLike is defined by the Rooms section below; this tiny local copy keeps companion routes independent.
+  function roomGhConfigLike() {
+    const token = process.env.GITHUB_TOKEN;
+    const ghOwner = process.env.GITHUB_OWNER || "Ramonskie1215";
+    const ghRepo = process.env.GITHUB_REPO || "DweyAISummarization";
+    const ghHeaders: Record<string, string> = {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "dwey-ai-summarization",
+    };
+    if (token) ghHeaders["Authorization"] = `Bearer ${token}`;
+    return { token, ghOwner, ghRepo, ghHeaders };
+  }
+
+  app.get("/api/companion", async (req, res) => {
+    try {
+      const filePath = String(req.query?.path || "").trim();
+      const companionPath = companionPathFor(filePath);
+      if (!companionPath) return res.status(400).json({ error: "A valid uploaded file path is required." });
+      const { ghOwner, ghRepo, ghHeaders } = roomGhConfigLike();
+      const resGh = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${companionPath.split("/").map(encodeURIComponent).join("/")}`, { headers: ghHeaders });
+      if (resGh.status === 404) return res.status(404).json({ error: "No AI summary saved for this file yet." });
+      if (!resGh.ok) {
+        const details = await resGh.text();
+        return res.status(resGh.status).json({ error: "Could not read the AI summary.", details });
+      }
+      const data: any = await resGh.json();
+      const raw = Buffer.from(String(data.content || "").replace(/\n/g, ""), "base64").toString("utf-8");
+      let parsed: any = {};
+      try { parsed = raw ? JSON.parse(raw) : {}; } catch (_) { parsed = { summary: raw }; }
+      return res.json({
+        file: parsed.file || { name: filePath.split("/").pop() || filePath, path: filePath },
+        summary: parsed.summary || "",
+        pagesCount: parsed.pagesCount || null,
+        createdAt: parsed.createdAt || null,
+        settings: parsed.settings || null,
+        companionPath,
+      });
+    } catch (error: any) {
+      console.error("[Companion Summary Exception]", error);
+      return res.status(500).json({ error: error.message || "An error occurred while working with the AI summary." });
+    }
+  });
+
+  app.post("/api/companion", async (req, res) => {
+    try {
+      const { token, ghOwner, ghRepo, ghHeaders } = roomGhConfigLike();
+      if (!token) return res.status(500).json({ error: "GITHUB_TOKEN is not configured on the server." });
+      const filePath = String(req.body?.filePath || "").trim();
+      const companionPath = companionPathFor(filePath);
+      const summary = String(req.body?.summary || "");
+      if (!companionPath) return res.status(400).json({ error: "A valid uploaded file path is required." });
+      if (!summary.trim()) return res.status(400).json({ error: "Summary is required." });
+      const fileName = String(req.body?.fileName || filePath.split("/").pop() || "document.pdf");
+      const payload = {
+        version: 1,
+        file: { name: fileName, path: filePath, size: typeof req.body?.fileSize === "number" ? req.body.fileSize : 0 },
+        summary,
+        pagesCount: typeof req.body?.pagesCount === "number" ? req.body.pagesCount : null,
+        createdAt: new Date().toISOString(),
+        settings: req.body?.settings || null,
+      };
+      const existing: any = await readCompanionFile(companionPath);
+      const content = Buffer.from(JSON.stringify(payload, null, 2) + "\n", "utf-8").toString("base64");
+      const putRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${companionPath.split("/").map(encodeURIComponent).join("/")}`, {
+        method: "PUT",
+        headers: { ...ghHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `Save AI summary for ${fileName}`, content, ...(existing?.sha ? { sha: existing.sha } : {}) }),
+      });
+      if (!putRes.ok) {
+        const details = await putRes.text();
+        return res.status(putRes.status).json({ error: "Could not save the AI summary.", details });
+      }
+      return res.json({ ok: true, companionPath, createdAt: payload.createdAt });
+    } catch (error: any) {
+      console.error("[Companion Summary Exception]", error);
+      return res.status(500).json({ error: error.message || "An error occurred while working with the AI summary." });
+    }
+  });
+
   // Rooms: Admin hosts a room from selected uploaded files; Guest joins with a 6-digit code
   const ROOMS_PATH = "rooms.json";
   const roomGhConfig = () => {
@@ -258,6 +369,7 @@ ${text}
       if (!filePath || typeof filePath !== "string") continue;
       const cleanPath = filePath.trim();
       if (!cleanPath.startsWith("uploaded/")) continue;
+      if (cleanPath.endsWith(".summary.json") || cleanPath.endsWith(".summary.md")) continue;
       if (seen.has(cleanPath)) continue;
       seen.add(cleanPath);
       const name = (typeof item === "object" && item?.name) || cleanPath.split("/").pop() || cleanPath;

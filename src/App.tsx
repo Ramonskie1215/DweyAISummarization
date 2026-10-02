@@ -38,6 +38,9 @@ export default function App() {
   const [isOcrScanning, setIsOcrScanning] = useState(false);
   const [docRendering, setDocRendering] = useState(false);
   const [focusedDocItem, setFocusedDocItem] = useState<number | null>(null);
+  const [docSelectionAnchor, setDocSelectionAnchor] = useState<number | null>(null);
+  const [docSelectionEnd, setDocSelectionEnd] = useState<number | null>(null);
+  const [copiedDocSelection, setCopiedDocSelection] = useState(false);
 
   // AI Summarization options and states
   const [summaryLength, setSummaryLength] = useState<"Short" | "Medium" | "Detailed">("Medium");
@@ -217,6 +220,9 @@ export default function App() {
     let cancelled = false;
     setDocRendering(true);
     setFocusedDocItem(null);
+    setDocSelectionAnchor(null);
+    setDocSelectionEnd(null);
+    setCopiedDocSelection(false);
     (async () => {
       try {
         const pdf = await getActualPdfDocument();
@@ -244,6 +250,53 @@ export default function App() {
       cancelled = true;
     };
   }, [rawTextMode, currentPageIndex, file, extractionResult, containerWidth]);
+
+  // Double-click selection on the Actual Document view: first double-click
+  // sets the anchor, a second one on another word selects the whole range
+  // between them; double-clicking the anchor again clears the selection.
+  const docPageItems = extractionResult?.pageLayouts?.[currentPageIndex]?.items || [];
+  const docSelLo = docSelectionAnchor !== null && docSelectionEnd !== null ? Math.min(docSelectionAnchor, docSelectionEnd) : null;
+  const docSelHi = docSelectionAnchor !== null && docSelectionEnd !== null ? Math.max(docSelectionAnchor, docSelectionEnd) : null;
+  const selectedDocText = docSelLo !== null && docSelHi !== null
+    ? docPageItems.slice(docSelLo, docSelHi + 1).map((it) => it.str).join(" ").replace(/\s+/g, " ").trim()
+    : "";
+
+  const handleDocItemDoubleClick = (idx: number) => {
+    if (docSelectionAnchor === null || idx === docSelectionAnchor) {
+      if (docSelectionAnchor === null) {
+        setDocSelectionAnchor(idx);
+        setDocSelectionEnd(idx);
+      } else {
+        setDocSelectionAnchor(null);
+        setDocSelectionEnd(null);
+      }
+    } else {
+      setDocSelectionEnd(idx);
+    }
+    setCopiedDocSelection(false);
+  };
+
+  const clearDocSelection = () => {
+    setDocSelectionAnchor(null);
+    setDocSelectionEnd(null);
+    setCopiedDocSelection(false);
+  };
+
+  const copyDocSelection = async () => {
+    if (!selectedDocText) return;
+    try {
+      await navigator.clipboard.writeText(selectedDocText);
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = selectedDocText;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (__) {}
+      document.body.removeChild(ta);
+    }
+    setCopiedDocSelection(true);
+    setTimeout(() => setCopiedDocSelection(false), 2000);
+  };
 
   // Summarize action
   const handleSummarize = async () => {
@@ -1051,12 +1104,30 @@ export default function App() {
                             <Info className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" />
                             Traced Text:
                           </span>
-                          {focusedDocItem !== null && extractionResult.pageLayouts && extractionResult.pageLayouts[currentPageIndex] && extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem] ? (
+                          {selectedDocText ? (
+                            <>
+                              <span className="text-neutral-800 dark:text-neutral-200 font-medium break-all flex-1 min-w-0">
+                                {selectedDocText}
+                              </span>
+                              <button
+                                onClick={copyDocSelection}
+                                className="shrink-0 px-2 py-1 rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-[11px] font-semibold hover:opacity-90 transition-opacity"
+                              >
+                                {copiedDocSelection ? "Copied!" : "Copy"}
+                              </button>
+                              <button
+                                onClick={clearDocSelection}
+                                className="shrink-0 px-2 py-1 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 text-[11px] font-semibold"
+                              >
+                                Clear
+                              </button>
+                            </>
+                          ) : focusedDocItem !== null && extractionResult.pageLayouts && extractionResult.pageLayouts[currentPageIndex] && extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem] ? (
                             <span className="text-neutral-800 dark:text-neutral-200 font-medium break-all">
                               {extractionResult.pageLayouts[currentPageIndex].items[focusedDocItem].str}
                             </span>
                           ) : (
-                            <span className="text-neutral-400 dark:text-neutral-500 italic">Hover over the page to highlight each piece of traced text in place.</span>
+                            <span className="text-neutral-400 dark:text-neutral-500 italic">Hover to highlight text. Double-click a word, then double-click another to select everything in between.</span>
                           )}
                         </div>
 
@@ -1087,15 +1158,19 @@ export default function App() {
                                   )}
                                   {pageLayout.items.map((item, idx) => {
                                     const isFocused = focusedDocItem === idx;
+                                    const isSelected = docSelLo !== null && docSelHi !== null && idx >= docSelLo && idx <= docSelHi;
                                     return (
                                       <div
                                         key={idx}
                                         onMouseEnter={() => setFocusedDocItem(idx)}
                                         onMouseLeave={() => setFocusedDocItem(null)}
+                                        onDoubleClick={() => handleDocItemDoubleClick(idx)}
                                         className={`absolute cursor-pointer transition-colors duration-75 ${
-                                          isFocused
-                                            ? "bg-amber-300/50 border border-amber-500 z-10"
-                                            : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"
+                                          isSelected
+                                            ? "bg-blue-500/35 border border-blue-600 z-10"
+                                            : isFocused
+                                              ? "bg-amber-300/50 border border-amber-500 z-10"
+                                              : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"
                                         }`}
                                         style={{
                                           left: `${item.x * scale}px`,

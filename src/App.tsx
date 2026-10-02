@@ -109,6 +109,7 @@ export default function App() {
   const docCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfDocCacheRef = useRef<{ file: File; pdf: any } | null>(null);
   const uploadModalInputRef = useRef<HTMLInputElement>(null);
+  const currentUploadFolderRef = useRef<string>("");
   const guestCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const guestPdfCacheRef = useRef<{ file: File; pdf: any } | null>(null);
   const guestDocWrapRef = useRef<HTMLDivElement>(null);
@@ -200,8 +201,14 @@ export default function App() {
     fileInputRef.current?.click();
   };
 
-  // Sends a copy of the uploaded PDF to the repo's /uploaded folder (fire-and-forget, best-effort)
-  const backupUploadToRepo = (fileToBackup: File) => {
+  const getUploadDateFolder = () => {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const get = (t: string) => parts.find((x) => x.type === t)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  };
+
+  // Sends a copy of the uploaded PDF to the repo's uploaded/<date>/ folder (fire-and-forget, best-effort)
+  const backupUploadToRepo = (fileToBackup: File, dateFolder: string) => {
     try {
       const reader = new FileReader();
       reader.onload = () => {
@@ -211,7 +218,7 @@ export default function App() {
         fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: fileToBackup.name, content: base64 }),
+          body: JSON.stringify({ filename: fileToBackup.name, content: base64, dateFolder }),
         }).catch(() => { /* backup is best-effort; never interrupt the user */ });
       };
       reader.readAsDataURL(fileToBackup);
@@ -223,7 +230,9 @@ export default function App() {
   // Main file processor
   const processFile = async (selectedFile: File) => {
     setFile(selectedFile);
-    backupUploadToRepo(selectedFile);
+    const uploadFolder = getUploadDateFolder();
+    currentUploadFolderRef.current = uploadFolder;
+    backupUploadToRepo(selectedFile, uploadFolder);
     setIsExtracting(true);
     setExtractionProgress(null);
     setIsOcrScanning(false);
@@ -582,7 +591,8 @@ export default function App() {
   const getUploadedRepoPath = (fileName: string) => {
     const baseName = String(fileName).split(/[\\/]/).pop() || "upload.pdf";
     const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, "_") || "upload.pdf";
-    return `uploaded/${safeName}`;
+    const folder = currentUploadFolderRef.current || getUploadDateFolder();
+    return `uploaded/${folder}/${safeName}`;
   };
 
   const generateFixedSummary = async (result: PDFParseResult) => {

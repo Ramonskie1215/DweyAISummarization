@@ -72,6 +72,17 @@ function makeCode(existing: Set<string>) {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+function publicRoom(room: any) {
+  const startedAt = room?.startedAt || room?.createdAt || null;
+  return {
+    code: String(room?.code || ""),
+    createdAt: startedAt,
+    startedAt,
+    endedAt: room?.endedAt || null,
+    files: Array.isArray(room?.files) ? room.files : [],
+  };
+}
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -87,26 +98,44 @@ export default async function handler(req: any, res: any) {
   try {
     if (req.method === 'GET') {
       const code = String(req.query?.code || "").trim();
+      const { rooms } = await readRooms(ghOwner, ghRepo, ghHeaders);
+      if (!code) {
+        const history = [...rooms].sort((a: any, b: any) => String(b?.startedAt || b?.createdAt || "").localeCompare(String(a?.startedAt || a?.createdAt || ""))).map(publicRoom);
+        return res.status(200).json({ rooms: history });
+      }
       if (!/^\d{6}$/.test(code)) {
         return res.status(400).json({ error: "Enter a valid 6-digit room code." });
       }
-      const { rooms } = await readRooms(ghOwner, ghRepo, ghHeaders);
       const room = rooms.find((r: any) => String(r?.code) === code);
       if (!room) return res.status(404).json({ error: "Room not found. Check the code and try again." });
-      return res.status(200).json({ code: room.code, createdAt: room.createdAt || null, files: Array.isArray(room.files) ? room.files : [] });
+      if (room.endedAt) return res.status(410).json({ error: "This room has ended." });
+      return res.status(200).json(publicRoom(room));
     }
 
     if (req.method === 'POST') {
       if (!token) return res.status(500).json({ error: "GITHUB_TOKEN is not configured on the server." });
+      if (String(req.body?.action || "") === "end") {
+        const code = String(req.body?.code || "").trim();
+        if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: "Enter a valid 6-digit room code." });
+        const { rooms, sha } = await readRooms(ghOwner, ghRepo, ghHeaders);
+        const idx = rooms.findIndex((r: any) => String(r?.code) === code);
+        if (idx === -1) return res.status(404).json({ error: "Room not found. Check the code and try again." });
+        if (!rooms[idx].endedAt) {
+          rooms[idx] = { ...rooms[idx], endedAt: new Date().toISOString() };
+          await writeRooms(ghOwner, ghRepo, ghHeaders, rooms, sha, `End room ${code}`);
+        }
+        return res.status(200).json(publicRoom(rooms[idx]));
+      }
       const files = normalizeFiles(req.body?.files);
       if (files.length === 0) return res.status(400).json({ error: "Select at least one uploaded file for the room." });
       const { rooms, sha } = await readRooms(ghOwner, ghRepo, ghHeaders);
       const existing = new Set<string>(rooms.map((r: any) => String(r?.code)));
       const code = makeCode(existing);
-      const room = { code, files, createdAt: new Date().toISOString() };
+      const now = new Date().toISOString();
+      const room = { code, files, createdAt: now, startedAt: now, endedAt: null };
       const nextRooms = [...rooms, room];
       await writeRooms(ghOwner, ghRepo, ghHeaders, nextRooms, sha, `Create room ${code}`);
-      return res.status(200).json({ code: room.code, createdAt: room.createdAt, files: room.files });
+      return res.status(200).json(publicRoom(room));
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

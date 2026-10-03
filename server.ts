@@ -19,7 +19,7 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  // Secure API Proxy endpoint to process text with the AI provider (Liminality)
+  // Secure API Proxy endpoint to process text with the AI provider (OpenRouter)
   app.post("/api/summarize", async (req, res) => {
     try {
       const { text, model, prompt, length, style, language, format } = req.body;
@@ -28,7 +28,7 @@ async function startServer() {
       }
 
       // Default or custom selected model
-      const selectedModel = model || process.env.AI_MODEL || "[满血]deepseek-v4-flash";
+      const selectedModel = model || process.env.AI_MODEL || "openrouter/free";
 
       // Build structured guidelines based on length and style requested
       const summaryLengthText = length || "Medium";
@@ -69,7 +69,7 @@ ${text}
       if (!apiKey) {
         return res.status(500).json({ error: "AI API key is not configured on the server. Set the AI_API_KEY environment variable." });
       }
-      const aiBaseUrl = (process.env.AI_API_BASE_URL || "https://beizhi.dedyn.io/v1").replace(/\/+$/, "");
+      const aiBaseUrl = (process.env.AI_API_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
 
       console.log(`[Proxy Request] Forwarding to ${aiBaseUrl} with model: ${selectedModel}`);
 

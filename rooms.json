@@ -97,7 +97,17 @@
       ],
       "createdAt": "2026-10-02T14:54:04.876Z",
       "startedAt": "2026-10-02T14:54:04.876Z",
-      "endedAt": null
+      "endedAt": null,
+      "lead": {
+        "id": "guest-wq4co2ua-murq58vv",
+        "name": "Guest",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-03T01:39:52.104Z",
+        "live": true
+      }
     }
   ]
 }

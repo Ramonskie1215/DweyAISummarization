@@ -501,6 +501,31 @@ export default function App() {
 
   // Sends a copy of the uploaded PDF to the repo's uploaded/<date>/ folder (fire-and-forget, best-effort)
   const backupUploadToRepo = (fileToBackup: File, dateFolder: string) => {
+    // PDFs over ~3 MB would exceed Vercel's 4.5 MB function body limit once
+    // base64-encoded (413), so large files are staged in Vercel Blob first:
+    // the browser uploads straight to storage, then /api/upload copies it
+    // into GitHub server-to-server and deletes the staging blob.
+    if (fileToBackup.size > 3_000_000) {
+      (async () => {
+        try {
+          const { upload } = await import("@vercel/blob/client");
+          const blob = await upload(`staging/${dateFolder}/${fileToBackup.name}`, fileToBackup, {
+            access: "public",
+            handleUploadUrl: "/api/blob-upload",
+            contentType: "application/pdf",
+            multipart: true,
+          });
+          await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: fileToBackup.name, blobUrl: blob.url, dateFolder }),
+          });
+        } catch (err) {
+          console.warn("Large-file backup copy failed:", err);
+        }
+      })();
+      return;
+    }
     try {
       const reader = new FileReader();
       reader.onload = () => {

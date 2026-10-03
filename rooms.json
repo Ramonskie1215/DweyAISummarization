@@ -108,6 +108,21 @@
         "updatedAt": "2026-10-03T02:16:24.053Z",
         "live": true
       }
+    },
+    {
+      "code": "316028",
+      "files": [
+        {
+          "name": "5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+          "path": "uploaded/2026-10-03/5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+          "size": 1376279,
+          "uploadedAt": "2026-10-03T02:17:25Z"
+        }
+      ],
+      "createdAt": "2026-10-03T02:20:51.091Z",
+      "startedAt": "2026-10-03T02:20:51.091Z",
+      "endedAt": null,
+      "lead": null
     }
   ]
 }

@@ -251,6 +251,10 @@ export default function App() {
   const [copiedDocSelection, setCopiedDocSelection] = useState(false);
   // Traced boxes stay hidden until the user taps an open area of the page
   const [showDocTraces, setShowDocTraces] = useState(false);
+  // "Ask AI what this means" layperson explanation for the highlighted text
+  const [docExplainResult, setDocExplainResult] = useState<string | null>(null);
+  const [docExplainLoading, setDocExplainLoading] = useState(false);
+  const [docExplainError, setDocExplainError] = useState<string | null>(null);
   const [appView, setAppView] = useState<"files" | "upload">("files");
   const [profileRole, setProfileRole] = useState<"Admin" | "Guest">(() => {
     const saved = localStorage.getItem("dwey-profile");
@@ -294,6 +298,10 @@ export default function App() {
   const [guestSelectionAnchor, setGuestSelectionAnchor] = useState<number | null>(null);
   const [guestSelectionEnd, setGuestSelectionEnd] = useState<number | null>(null);
   const [guestCopiedSelection, setGuestCopiedSelection] = useState(false);
+  // Guest "Ask AI what this means" explanation for the highlighted text
+  const [guestExplainResult, setGuestExplainResult] = useState<string | null>(null);
+  const [guestExplainLoading, setGuestExplainLoading] = useState(false);
+  const [guestExplainError, setGuestExplainError] = useState<string | null>(null);
   const [guestClientId] = useState<string>(() => {
     const saved = localStorage.getItem("dwey-guest-id");
     if (saved) return saved;
@@ -517,6 +525,8 @@ export default function App() {
     setDocSelectionAnchor(null);
     setDocSelectionEnd(null);
     setCopiedDocSelection(false);
+    setDocExplainResult(null);
+    setDocExplainError(null);
     (async () => {
       try {
         const pdf = await getActualPdfDocument();
@@ -574,6 +584,57 @@ export default function App() {
     ? docPageItems.slice(docSelLo, docSelHi + 1).map((it) => it.str).join(" ").replace(/\s+/g, " ").trim()
     : "";
 
+  // Asks the AI (through the existing summarize proxy) to explain a
+  // highlighted passage in plain layperson words, using the document itself
+  // as context so the explanation is specific to this document.
+  const askAiToExplain = async (selectedText: string, context: string, language: "en" | "tl") => {
+    const trimmedContext = (context || "").replace(/\s+/g, " ").trim().slice(0, 6000);
+    const prompt = `You are helping a non-technical reader understand a highlighted part of a document.
+
+Highlighted text from the document:
+"""
+${selectedText}
+"""
+${trimmedContext ? `
+What this document is about / surrounding context from the same document:
+${trimmedContext}
+` : ""}
+Explain in simple, everyday words what the highlighted text means in this specific document. If it uses abbreviations, legal or technical terms, briefly say what they mean in plain language. Keep it short (2 to 4 sentences), friendly, and avoid jargon. Use plain sentences only, no markdown formatting. Do not just repeat the highlighted text back.`;
+    const response = await fetch("/api/summarize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: selectedText, prompt, language }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      let msg = "The AI could not explain this right now. Please try again.";
+      try {
+        const errData = JSON.parse(errText);
+        if (errData?.error) msg = errData.error;
+      } catch (_) {}
+      throw new Error(msg);
+    }
+    const data = await response.json();
+    const explanation = String(data?.summary || "").trim();
+    if (!explanation) throw new Error("The AI returned an empty explanation. Please try again.");
+    return explanation;
+  };
+
+  const askDocExplain = async () => {
+    if (!selectedDocText || docExplainLoading) return;
+    setDocExplainLoading(true);
+    setDocExplainError(null);
+    setDocExplainResult(null);
+    try {
+      const explanation = await askAiToExplain(selectedDocText, extractionResult?.text || "", summaryLanguage);
+      setDocExplainResult(explanation);
+    } catch (explainErr: any) {
+      setDocExplainError(explainErr?.message || "Could not get an explanation. Please try again.");
+    } finally {
+      setDocExplainLoading(false);
+    }
+  };
+
   const handleDocItemDoubleClick = (idx: number) => {
     if (docSelectionAnchor === null) {
       setDocSelectionAnchor(idx);
@@ -588,12 +649,16 @@ export default function App() {
       setDocSelectionEnd(idx);
     }
     setCopiedDocSelection(false);
+    setDocExplainResult(null);
+    setDocExplainError(null);
   };
 
   const clearDocSelection = () => {
     setDocSelectionAnchor(null);
     setDocSelectionEnd(null);
     setCopiedDocSelection(false);
+    setDocExplainResult(null);
+    setDocExplainError(null);
   };
 
   const copyDocSelection = async () => {
@@ -1083,6 +1148,8 @@ export default function App() {
     setGuestSelectionAnchor(null);
     setGuestSelectionEnd(null);
     setGuestCopiedSelection(false);
+    setGuestExplainResult(null);
+    setGuestExplainError(null);
   };
 
   const closeGuestDocument = () => {
@@ -1103,6 +1170,8 @@ export default function App() {
     setGuestSelectionAnchor(null);
     setGuestSelectionEnd(null);
     setGuestCopiedSelection(false);
+    setGuestExplainResult(null);
+    setGuestExplainError(null);
     setGuestDocLoading(true);
     try {
       // Saved AI summary (companion file) — no need to call AI again.
@@ -1323,6 +1392,8 @@ export default function App() {
     setGuestSelectionAnchor(null);
     setGuestSelectionEnd(null);
     setGuestCopiedSelection(false);
+    setGuestExplainResult(null);
+    setGuestExplainError(null);
     (async () => {
       try {
         const pdf = await getGuestPdfDocument();
@@ -1395,12 +1466,16 @@ export default function App() {
       setGuestSelectionEnd(idx);
     }
     setGuestCopiedSelection(false);
+    setGuestExplainResult(null);
+    setGuestExplainError(null);
   };
 
   const clearGuestSelection = () => {
     setGuestSelectionAnchor(null);
     setGuestSelectionEnd(null);
     setGuestCopiedSelection(false);
+    setGuestExplainResult(null);
+    setGuestExplainError(null);
   };
 
   const copyGuestSelection = async () => {
@@ -1417,6 +1492,22 @@ export default function App() {
     }
     setGuestCopiedSelection(true);
     setTimeout(() => setGuestCopiedSelection(false), 2000);
+  };
+
+  const askGuestExplain = async () => {
+    if (!selectedGuestText || guestExplainLoading) return;
+    setGuestExplainLoading(true);
+    setGuestExplainError(null);
+    setGuestExplainResult(null);
+    try {
+      const context = guestSummary || guestDocResult?.text || "";
+      const explanation = await askAiToExplain(selectedGuestText, context, "en");
+      setGuestExplainResult(explanation);
+    } catch (explainErr: any) {
+      setGuestExplainError(explainErr?.message || "Could not get an explanation. Please try again.");
+    } finally {
+      setGuestExplainLoading(false);
+    }
   };
 
   // Summarize action
@@ -1655,6 +1746,54 @@ export default function App() {
                                 <div key={idx} onMouseEnter={() => setGuestFocusedItem(idx)} onMouseLeave={() => setGuestFocusedItem(null)} onClick={(e) => e.stopPropagation()} onDoubleClick={() => handleGuestItemDoubleClick(idx)} title={item.str} className={`absolute cursor-pointer transition-colors ${isGuestSelected ? "bg-blue-500/35 border border-blue-600 z-10" : isGuestFocused ? "bg-amber-300/50 border border-amber-500 z-10" : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"}`} style={{ left: `${item.x * scale}px`, top: `${item.y * scale}px`, width: `${Math.max(item.width * scale, 4)}px`, height: `${Math.max(item.height * scale, 6)}px` }} />
                               );
                             })}
+                            {guestShowTraces && selectedGuestText && guestSelHi !== null && pageLayout.items[guestSelHi] && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                className="absolute z-20 w-[264px] max-w-[85%] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 text-left cursor-default"
+                                style={{
+                                  left: `${Math.min(Math.max(pageLayout.items[guestSelHi].x * scale, 8), Math.max(8, renderWidth - 272))}px`,
+                                  top: `${Math.min(Math.max((pageLayout.items[guestSelHi].y + pageLayout.items[guestSelHi].height) * scale + 8, 8), Math.max(8, renderHeight - 160))}px`,
+                                }}
+                              >
+                                {guestExplainLoading ? (
+                                  <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Asking AI…</span>
+                                  </div>
+                                ) : guestExplainResult ? (
+                                  <div>
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                      <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 flex items-center gap-1">
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        What this means
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setGuestExplainResult(null); setGuestExplainError(null); }}
+                                        className="shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                                        title="Close"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    <p className="text-xs leading-relaxed text-neutral-700 dark:text-neutral-200 whitespace-pre-wrap">{guestExplainResult}</p>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <button
+                                      type="button"
+                                      onClick={askGuestExplain}
+                                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5" />
+                                      Ask AI what this means
+                                    </button>
+                                    {guestExplainError && <p className="text-[11px] text-red-500 mt-2 leading-snug">{guestExplainError}</p>}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })()
@@ -2789,6 +2928,54 @@ export default function App() {
                                       />
                                     );
                                   })}
+                                  {showDocTraces && selectedDocText && docSelHi !== null && pageLayout.items[docSelHi] && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      onDoubleClick={(e) => e.stopPropagation()}
+                                      className="absolute z-20 w-[264px] max-w-[85%] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 text-left cursor-default"
+                                      style={{
+                                        left: `${Math.min(Math.max(pageLayout.items[docSelHi].x * scale, 8), Math.max(8, renderWidth - 272))}px`,
+                                        top: `${Math.min(Math.max((pageLayout.items[docSelHi].y + pageLayout.items[docSelHi].height) * scale + 8, 8), Math.max(8, renderHeight - 160))}px`,
+                                      }}
+                                    >
+                                      {docExplainLoading ? (
+                                        <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                          <span>Asking AI…</span>
+                                        </div>
+                                      ) : docExplainResult ? (
+                                        <div>
+                                          <div className="flex items-start justify-between gap-2 mb-1">
+                                            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 flex items-center gap-1">
+                                              <Sparkles className="w-3.5 h-3.5" />
+                                              What this means
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => { setDocExplainResult(null); setDocExplainError(null); }}
+                                              className="shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                                              title="Close"
+                                            >
+                                              <X className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                          <p className="text-xs leading-relaxed text-neutral-700 dark:text-neutral-200 whitespace-pre-wrap">{docExplainResult}</p>
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <button
+                                            type="button"
+                                            onClick={askDocExplain}
+                                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
+                                          >
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                            Ask AI what this means
+                                          </button>
+                                          {docExplainError && <p className="text-[11px] text-red-500 mt-2 leading-snug">{docExplainError}</p>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()

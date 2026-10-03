@@ -122,16 +122,7 @@
       "createdAt": "2026-10-03T02:20:51.091Z",
       "startedAt": "2026-10-03T02:20:51.091Z",
       "endedAt": null,
-      "lead": {
-        "id": "guest-xcg9j72a-murrf76s",
-        "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-03/5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
-        "fileName": "5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
-        "page": 1,
-        "updatedAt": "2026-10-03T02:22:13.947Z",
-        "live": true
-      }
+      "lead": null
     }
   ]
 }

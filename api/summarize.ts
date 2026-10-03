@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
     }
 
     // Default or custom selected model
-    const selectedModel = model || "deepseek/deepseek-v4-flash-free";
+    const selectedModel = model || process.env.AI_MODEL || "[满血]deepseek-v4-flash";
 
     // Build structured guidelines based on length and style requested
     const summaryLengthText = length || "Medium";
@@ -60,9 +60,13 @@ ${text}
     const summaryLanguageText = language === "tl" ? "Tagalog" : "English";
     const userPrompt = `${basePrompt}\n\nIMPORTANT: Write the entire summary in ${summaryLanguageText}.`;
 
-    const apiKey = process.env.APMIX_API_KEY || "apx_live_XuemnuQhPPjDoWqkq19wVTgM1Z2AvUIqWxALwjQM";
+    const apiKey = process.env.AI_API_KEY || "";
+    if (!apiKey) {
+      return res.status(500).json({ error: "AI API key is not configured on the server. Set the AI_API_KEY environment variable." });
+    }
+    const aiBaseUrl = (process.env.AI_API_BASE_URL || "https://beizhi.dedyn.io/v1").replace(/\/+$/, "");
 
-    const response = await fetch("https://api.apmix.ai/v1/chat/completions", {
+    const response = await fetch(`${aiBaseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

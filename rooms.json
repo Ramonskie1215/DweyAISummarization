@@ -168,6 +168,21 @@
         "updatedAt": "2026-10-03T02:49:38.619Z",
         "live": true
       }
+    },
+    {
+      "code": "949967",
+      "files": [
+        {
+          "name": "5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+          "path": "uploaded/2026-10-03/5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+          "size": 1376279,
+          "uploadedAt": "2026-10-03T02:17:25Z"
+        }
+      ],
+      "createdAt": "2026-10-03T03:27:13.759Z",
+      "startedAt": "2026-10-03T03:27:13.759Z",
+      "endedAt": null,
+      "lead": null
     }
   ]
 }

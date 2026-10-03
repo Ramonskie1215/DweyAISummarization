@@ -61,6 +61,69 @@ type SummaryRangeEntry = {
   markdown: string;
 };
 
+// Picks where the "Ask AI what this means" popover should sit: as close as
+// possible to the highlighted range, but in the nearest open area so it does
+// not cover other traced boxes the user may still want to double-click.
+function computeAskAiPlacement(
+  items: Array<{ x: number; y: number; width: number; height: number }>,
+  lo: number,
+  hi: number,
+  scale: number,
+  sheetW: number,
+  sheetH: number,
+  popW: number,
+  popH: number
+): { x: number; y: number } {
+  const rects = items.map((it) => ({
+    x: it.x * scale,
+    y: it.y * scale,
+    w: Math.max(it.width * scale, 4),
+    h: Math.max(it.height * scale, 6),
+  }));
+  const selItems = rects.slice(lo, hi + 1);
+  if (!selItems.length) return { x: 8, y: 8 };
+  const selX = Math.min(...selItems.map((r) => r.x));
+  const selY = Math.min(...selItems.map((r) => r.y));
+  const selRight = Math.max(...selItems.map((r) => r.x + r.w));
+  const selBottom = Math.max(...selItems.map((r) => r.y + r.h));
+  const gap = 8;
+  const clampX = (v: number) => Math.min(Math.max(v, gap), Math.max(gap, sheetW - popW - gap));
+  const clampY = (v: number) => Math.min(Math.max(v, gap), Math.max(gap, sheetH - popH - gap));
+  const candidates = [
+    { x: selX, y: selBottom + gap }, // below, left-aligned
+    { x: selRight - popW, y: selBottom + gap }, // below, right-aligned
+    { x: selX, y: selY - popH - gap }, // above, left-aligned
+    { x: selRight - popW, y: selY - popH - gap }, // above, right-aligned
+    { x: selRight + gap, y: selY }, // right of the selection
+    { x: selX - popW - gap, y: selY }, // left of the selection
+    { x: selRight + gap, y: selBottom - popH }, // right, bottom-aligned
+    { x: selX - popW - gap, y: selBottom - popH }, // left, bottom-aligned
+  ].map((c) => ({ x: clampX(c.x), y: clampY(c.y) }));
+  const overlapArea = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number }
+  ) =>
+    Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
+    Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  let best = candidates[0];
+  let bestScore = Infinity;
+  candidates.forEach((c, order) => {
+    const pop = { x: c.x, y: c.y, w: popW, h: popH };
+    // Mild preference for below/above spots, then for spots nearer the selection
+    let score = order * 10 + Math.hypot(c.x - selX, c.y - selBottom) * 0.02;
+    rects.forEach((r, idx) => {
+      const o = overlapArea(pop, r);
+      // Covering an unselected box is the real problem; the selected ones matter less
+      if (o > 0) score += idx >= lo && idx <= hi ? o * 0.25 : o;
+    });
+    if (score < bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  });
+  return best;
+}
+
 function matchSummaryRangeStart(line: string): { start: number; end: number; title: string; rest: string } | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -1733,6 +1796,10 @@ Explain in simple, everyday words what the highlighted text means in this specif
                         const renderWidth = Math.max(300, wrapW - 32);
                         const renderHeight = renderWidth / (pageLayout.width / pageLayout.height);
                         const scale = renderWidth / pageLayout.width;
+                        const guestAskAiPopW = guestExplainResult ? 264 : 196;
+                        const guestAskAiPos = guestSelLo !== null && guestSelHi !== null
+                          ? computeAskAiPlacement(pageLayout.items, guestSelLo, guestSelHi, scale, renderWidth, renderHeight, guestAskAiPopW, guestExplainResult ? 176 : 56)
+                          : { x: 8, y: 8 };
                         return (
                           <div className="relative bg-white shadow-md rounded overflow-hidden mx-auto cursor-pointer" style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} id="guest-actual-document-sheet" onClick={() => setGuestShowTraces((prev) => !prev)} title={guestShowTraces ? "Tap an open area to hide the traced text" : "Tap an open area to show the traced text"}>
                             <canvas ref={guestCanvasRef} style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} className="block" />
@@ -1750,11 +1817,8 @@ Explain in simple, everyday words what the highlighted text means in this specif
                               <div
                                 onClick={(e) => e.stopPropagation()}
                                 onDoubleClick={(e) => e.stopPropagation()}
-                                className="absolute z-20 w-[264px] max-w-[85%] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 text-left cursor-default"
-                                style={{
-                                  left: `${Math.min(Math.max(pageLayout.items[guestSelHi].x * scale, 8), Math.max(8, renderWidth - 272))}px`,
-                                  top: `${Math.min(Math.max((pageLayout.items[guestSelHi].y + pageLayout.items[guestSelHi].height) * scale + 8, 8), Math.max(8, renderHeight - 160))}px`,
-                                }}
+                                className="absolute z-20 max-w-[85%] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 text-left cursor-default"
+                                style={{ left: `${guestAskAiPos.x}px`, top: `${guestAskAiPos.y}px`, width: `${guestAskAiPopW}px` }}
                               >
                                 {guestExplainLoading ? (
                                   <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
@@ -2882,6 +2946,10 @@ Explain in simple, everyday words what the highlighted text means in this specif
                               const renderWidth = Math.max(300, containerWidth - 48);
                               const renderHeight = renderWidth / widthToHeightRatio;
                               const scale = renderWidth / pageLayout.width;
+                              const docAskAiPopW = docExplainResult ? 264 : 196;
+                              const docAskAiPos = docSelLo !== null && docSelHi !== null
+                                ? computeAskAiPlacement(pageLayout.items, docSelLo, docSelHi, scale, renderWidth, renderHeight, docAskAiPopW, docExplainResult ? 176 : 56)
+                                : { x: 8, y: 8 };
 
                               return (
                                 <div
@@ -2932,11 +3000,8 @@ Explain in simple, everyday words what the highlighted text means in this specif
                                     <div
                                       onClick={(e) => e.stopPropagation()}
                                       onDoubleClick={(e) => e.stopPropagation()}
-                                      className="absolute z-20 w-[264px] max-w-[85%] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 text-left cursor-default"
-                                      style={{
-                                        left: `${Math.min(Math.max(pageLayout.items[docSelHi].x * scale, 8), Math.max(8, renderWidth - 272))}px`,
-                                        top: `${Math.min(Math.max((pageLayout.items[docSelHi].y + pageLayout.items[docSelHi].height) * scale + 8, 8), Math.max(8, renderHeight - 160))}px`,
-                                      }}
+                                      className="absolute z-20 max-w-[85%] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 text-left cursor-default"
+                                      style={{ left: `${docAskAiPos.x}px`, top: `${docAskAiPos.y}px`, width: `${docAskAiPopW}px` }}
                                     >
                                       {docExplainLoading ? (
                                         <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">

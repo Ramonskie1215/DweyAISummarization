@@ -3,6 +3,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { del } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
 dotenv.config();
 
@@ -191,10 +193,49 @@ ${text}
     }
   });
 
+  // Issues short-lived tokens so the browser can upload large PDFs directly to
+  // Vercel Blob storage (staging only; /api/upload copies the file into GitHub).
+  app.post("/api/blob-upload", async (req, res) => {
+    try {
+      const jsonResponse = await handleUpload({
+        body: req.body as HandleUploadBody,
+        request: req as any,
+        onBeforeGenerateToken: async () => ({
+          allowedContentTypes: ["application/pdf"],
+          maximumSizeInBytes: 100 * 1024 * 1024,
+          addRandomSuffix: true,
+        }),
+        onUploadCompleted: async () => {
+          // Nothing to do: the browser calls /api/upload with the blob URL next.
+        },
+      });
+      return res.json(jsonResponse);
+    } catch (error: any) {
+      console.error("[Blob Upload] Exception occurred:", error);
+      return res.status(400).json({ error: error.message || "Could not start the large-file upload." });
+    }
+  });
+
   // Backup endpoint: commits a copy of an uploaded PDF to the repo's /uploaded folder via the GitHub API
   app.post("/api/upload", async (req, res) => {
     try {
-      const { filename, content, dateFolder } = req.body;
+      const { filename, blobUrl, dateFolder } = req.body || {};
+      let { content } = req.body || {};
+      if (blobUrl) {
+        // Large-file path: the browser staged the PDF in Vercel Blob (direct-to-storage
+        // uploads bypass Vercel's 4.5 MB function body limit); fetch it here
+        // server-to-server, then fall through to the same GitHub commit.
+        let blobHost = "";
+        try { blobHost = new URL(String(blobUrl)).hostname; } catch (_) { blobHost = ""; }
+        if (!blobHost.endsWith(".blob.vercel-storage.com")) {
+          return res.status(400).json({ error: "Invalid blobUrl." });
+        }
+        const blobRes = await fetch(String(blobUrl));
+        if (!blobRes.ok) {
+          return res.status(502).json({ error: "Could not read the staged upload." });
+        }
+        content = Buffer.from(await blobRes.arrayBuffer()).toString("base64");
+      }
       if (!filename || !content || typeof content !== "string") {
         return res.status(400).json({ error: "filename and base64 content are required." });
       }
@@ -242,6 +283,9 @@ ${text}
       }
 
       const putData = await putRes.json();
+      if (blobUrl) {
+        try { await del(String(blobUrl)); } catch (_) { /* staging cleanup is best-effort */ }
+      }
       return res.json({ ok: true, path: repoPath, commit: putData.commit?.sha });
     } catch (error: any) {
       console.error("[Upload Backup] Exception occurred:", error);

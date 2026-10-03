@@ -296,6 +296,8 @@ export default function App() {
   const pdfDocCacheRef = useRef<{ file: File; pdf: any } | null>(null);
   const uploadModalInputRef = useRef<HTMLInputElement>(null);
   const currentUploadFolderRef = useRef<string>("");
+  const docRenderTaskRef = useRef<any>(null);
+  const guestRenderTaskRef = useRef<any>(null);
   const guestCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const guestPdfCacheRef = useRef<{ file: File; pdf: any } | null>(null);
   const guestDocWrapRef = useRef<HTMLDivElement>(null);
@@ -487,25 +489,43 @@ export default function App() {
         const page = await pdf.getPage(currentPageIndex + 1);
         const canvas = docCanvasRef.current;
         if (!canvas || cancelled) return;
+        // Cancel any still-running render for the previous page: painting two
+        // pages onto the same canvas at once can corrupt/flip the result.
+        if (docRenderTaskRef.current) {
+          try { docRenderTaskRef.current.cancel(); } catch (_) {}
+          docRenderTaskRef.current = null;
+        }
         const renderWidth = Math.max(300, containerWidth - 48);
-        const baseViewport = page.getViewport({ scale: 1 });
+        // Honor the page's own rotation so rotated pages render upright.
+        const pageRotation = typeof page.rotate === "number" ? page.rotate : 0;
+        const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
         const dpr = window.devicePixelRatio || 1;
-        const viewport = page.getViewport({ scale: (renderWidth / baseViewport.width) * dpr });
+        const viewport = page.getViewport({ scale: (renderWidth / baseViewport.width) * dpr, rotation: pageRotation });
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
+        // Start from a clean, untransformed canvas before PDF.js paints.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        const renderTask = page.render({ canvasContext: ctx, viewport });
+        docRenderTaskRef.current = renderTask;
+        await renderTask.promise;
+        if (docRenderTaskRef.current === renderTask) docRenderTaskRef.current = null;
         if (!cancelled) setDocRendering(false);
-      } catch (renderError) {
+      } catch (renderError: any) {
+        if (cancelled || renderError?.name === "RenderingCancelledException") return;
         console.warn("Could not render the PDF page:", renderError);
         if (!cancelled) setDocRendering(false);
       }
     })();
     return () => {
       cancelled = true;
+      if (docRenderTaskRef.current) {
+        try { docRenderTaskRef.current.cancel(); } catch (_) {}
+        docRenderTaskRef.current = null;
+      }
     };
   }, [rawTextMode, currentPageIndex, file, extractionResult, containerWidth]);
 
@@ -1089,25 +1109,45 @@ export default function App() {
         const page = await pdf.getPage(guestPageIndex + 1);
         const canvas = guestCanvasRef.current;
         if (!canvas || cancelled) return;
+        // Cancel any still-running render for the previous page: painting two
+        // pages onto the same canvas at once can corrupt/flip the result.
+        if (guestRenderTaskRef.current) {
+          try { guestRenderTaskRef.current.cancel(); } catch (_) {}
+          guestRenderTaskRef.current = null;
+        }
         const wrapWidth = guestDocWrapRef.current?.clientWidth || 720;
         const renderWidth = Math.max(300, wrapWidth - 32);
-        const baseViewport = page.getViewport({ scale: 1 });
+        // Honor the page's own rotation so rotated pages render upright.
+        const pageRotation = typeof page.rotate === "number" ? page.rotate : 0;
+        const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
         const dpr = window.devicePixelRatio || 1;
-        const viewport = page.getViewport({ scale: (renderWidth / baseViewport.width) * dpr });
+        const viewport = page.getViewport({ scale: (renderWidth / baseViewport.width) * dpr, rotation: pageRotation });
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
+        // Start from a clean, untransformed canvas before PDF.js paints.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        const renderTask = page.render({ canvasContext: ctx, viewport });
+        guestRenderTaskRef.current = renderTask;
+        await renderTask.promise;
+        if (guestRenderTaskRef.current === renderTask) guestRenderTaskRef.current = null;
         if (!cancelled) setGuestDocRendering(false);
-      } catch (err) {
+      } catch (err: any) {
+        if (cancelled || err?.name === "RenderingCancelledException") return;
         console.warn("Could not render guest document page:", err);
         if (!cancelled) setGuestDocRendering(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (guestRenderTaskRef.current) {
+        try { guestRenderTaskRef.current.cancel(); } catch (_) {}
+        guestRenderTaskRef.current = null;
+      }
+    };
   }, [selectedGuestFile, guestPdfFile, guestDocResult, guestPageIndex]);
 
   // Summarize action

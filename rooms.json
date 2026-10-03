@@ -101,11 +101,11 @@
       "lead": {
         "id": "guest-wq4co2ua-murq58vv",
         "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-02/img20260929_14395173.pdf",
-        "fileName": "img20260929_14395173.pdf",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
         "page": 1,
-        "updatedAt": "2026-10-03T01:43:44.355Z",
+        "updatedAt": "2026-10-03T01:44:00.195Z",
         "live": true
       }
     }

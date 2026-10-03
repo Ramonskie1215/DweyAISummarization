@@ -38,6 +38,7 @@ Give a clear general summary of the whole file: what it is about, its main purpo
 
 ## Page Range Breakdown
 Look at the context of each page. If the file has different contexts/topics in different parts, group consecutive pages that share the same context into page ranges (for example, Pages 1-3, Pages 4-6) and describe what is on that specific range of pages. If the whole file shares one context, write a single entry for Pages 1 to the last page.
+Write each page range as its own Markdown heading in this exact form: ### Pages 1-2 for a range, or ### Page 5 for a single page. Put the description for that range in the paragraph(s) under its heading, and do not combine multiple ranges in one heading.
 Use only page numbers that appear in the [Page N] markers. Do not invent pages or content.
 
 Text to analyze, by page:

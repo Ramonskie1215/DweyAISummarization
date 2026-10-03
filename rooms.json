@@ -122,7 +122,16 @@
       "createdAt": "2026-10-03T02:20:51.091Z",
       "startedAt": "2026-10-03T02:20:51.091Z",
       "endedAt": null,
-      "lead": null
+      "lead": {
+        "id": "guest-xcg9j72a-murrf76s",
+        "name": "Guest",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-03T02:22:12.322Z",
+        "live": true
+      }
     }
   ]
 }

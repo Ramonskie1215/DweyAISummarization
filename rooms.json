@@ -161,11 +161,11 @@
       "lead": {
         "id": "guest-wq4co2ua-murq58vv",
         "name": "Guest",
-        "view": "files",
-        "filePath": null,
-        "fileName": null,
+        "view": "document",
+        "filePath": "uploaded/2026-10-03/5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+        "fileName": "5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
         "page": 1,
-        "updatedAt": "2026-10-03T02:49:33.782Z",
+        "updatedAt": "2026-10-03T02:49:38.619Z",
         "live": true
       }
     }

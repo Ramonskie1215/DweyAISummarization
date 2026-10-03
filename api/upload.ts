@@ -1,4 +1,10 @@
 
+import { del } from "@vercel/blob";
+
+// Large staged uploads can take a while to copy into GitHub; give the
+// function room beyond the default timeout.
+export const config = { maxDuration: 60 };
+
 function getDateFolder(input?: string) {
   const candidate = String(input || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return candidate;
@@ -96,8 +102,24 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { filename, content, dateFolder } = req.body || {};
-    if (!filename || !content || typeof content !== "string") {
+    const { filename, content, blobUrl, dateFolder } = req.body || {};
+    let base64Content = typeof content === "string" ? content : "";
+    if (blobUrl) {
+      // Large-file path: the browser staged the PDF in Vercel Blob (uploads go
+      // straight to storage, bypassing the 4.5 MB function body limit); fetch
+      // it here server-to-server, then fall through to the same GitHub commit.
+      let blobHost = "";
+      try { blobHost = new URL(String(blobUrl)).hostname; } catch (_) { blobHost = ""; }
+      if (!blobHost.endsWith(".blob.vercel-storage.com")) {
+        return res.status(400).json({ error: "Invalid blobUrl." });
+      }
+      const blobRes = await fetch(String(blobUrl));
+      if (!blobRes.ok) {
+        return res.status(502).json({ error: "Could not read the staged upload." });
+      }
+      base64Content = Buffer.from(await blobRes.arrayBuffer()).toString("base64");
+    }
+    if (!filename || !base64Content) {
       return res.status(400).json({ error: "filename and base64 content are required." });
     }
     const token = process.env.GITHUB_TOKEN;
@@ -132,7 +154,7 @@ export default async function handler(req: any, res: any) {
       headers: { ...ghHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
         message: `Add uploaded document: ${safeName}`,
-        content,
+        content: base64Content,
         ...(sha ? { sha } : {}),
       }),
     });
@@ -144,6 +166,9 @@ export default async function handler(req: any, res: any) {
     }
 
     const putData = await putRes.json();
+    if (blobUrl) {
+      try { await del(String(blobUrl)); } catch (_) { /* staging cleanup is best-effort */ }
+    }
     return res.status(200).json({ ok: true, path: repoPath, commit: putData.commit?.sha });
   } catch (error: any) {
     console.error("[Upload Backup] Exception occurred:", error);

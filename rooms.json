@@ -98,16 +98,7 @@
       "createdAt": "2026-10-02T14:54:04.876Z",
       "startedAt": "2026-10-02T14:54:04.876Z",
       "endedAt": null,
-      "lead": {
-        "id": "guest-wq4co2ua-murq58vv",
-        "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-02/img20260929_14395173.pdf",
-        "fileName": "img20260929_14395173.pdf",
-        "page": 3,
-        "updatedAt": "2026-10-03T01:45:25.405Z",
-        "live": true
-      }
+      "lead": null
     }
   ]
 }

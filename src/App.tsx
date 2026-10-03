@@ -43,6 +43,17 @@ const FIXED_SUMMARY_SETTINGS = {
 
 type RoomFileItem = { name: string; size: number; path: string; uploadedAt?: string | null };
 
+type RoomLead = {
+  id: string;
+  name?: string | null;
+  view?: "files" | "document";
+  filePath?: string | null;
+  fileName?: string | null;
+  page?: number;
+  updatedAt?: string | null;
+  live?: boolean;
+};
+
 type SummaryRangeEntry = {
   start: number;
   end: number;
@@ -256,7 +267,7 @@ export default function App() {
   const [roomHistoryLoading, setRoomHistoryLoading] = useState(false);
   const [roomHistoryError, setRoomHistoryError] = useState<string | null>(null);
   const [endingRoomCode, setEndingRoomCode] = useState<string | null>(null);
-  const [guestRoom, setGuestRoom] = useState<{ code: string; createdAt?: string | null; startedAt?: string | null; endedAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }> } | null>(null);
+  const [guestRoom, setGuestRoom] = useState<{ code: string; createdAt?: string | null; startedAt?: string | null; endedAt?: string | null; files: Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>; lead?: RoomLead | null } | null>(null);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [joinRoomError, setJoinRoomError] = useState<string | null>(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -276,6 +287,21 @@ export default function App() {
   const [guestPageIndex, setGuestPageIndex] = useState(0);
   const [guestDocRendering, setGuestDocRendering] = useState(false);
   const [guestFocusedItem, setGuestFocusedItem] = useState<number | null>(null);
+  const [guestClientId] = useState<string>(() => {
+    const saved = localStorage.getItem("dwey-guest-id");
+    if (saved) return saved;
+    const id = `guest-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+    try { localStorage.setItem("dwey-guest-id", id); } catch (_) {}
+    return id;
+  });
+  const [isFollowingLead, setIsFollowingLead] = useState(false);
+  const [leadActionBusy, setLeadActionBusy] = useState(false);
+  const [leadError, setLeadError] = useState<string | null>(null);
+  const lastLeadNavRef = useRef<string>("");
+  const leadNavTimerRef = useRef<number | null>(null);
+  const roomLead = guestRoom?.lead || null;
+  const isRoomLead = !!roomLead && roomLead.id === guestClientId && roomLead.live !== false;
+  const hasLiveLead = !!roomLead && roomLead.live !== false && roomLead.id !== guestClientId;
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -771,7 +797,10 @@ export default function App() {
       const res = await fetch(`/api/rooms?code=${encodeURIComponent(code)}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
-      setGuestRoom({ code: String(data.code || code), createdAt: data.createdAt || data.startedAt || null, startedAt: data.startedAt || data.createdAt || null, endedAt: data.endedAt || null, files: Array.isArray(data.files) ? data.files : [] });
+      setGuestRoom({ code: String(data.code || code), createdAt: data.createdAt || data.startedAt || null, startedAt: data.startedAt || data.createdAt || null, endedAt: data.endedAt || null, files: Array.isArray(data.files) ? data.files : [], lead: data.lead || null });
+      setIsFollowingLead(false);
+      setLeadError(null);
+      lastLeadNavRef.current = "";
       setIsRoomCodeModalOpen(false);
     } catch (err: any) {
       console.error("Failed to join room:", err);
@@ -783,6 +812,13 @@ export default function App() {
   };
 
   const leaveGuestRoom = () => {
+    if (guestRoom && isRoomLead) {
+      fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "lead-stop", code: guestRoom.code, leadId: guestClientId }),
+      }).catch(() => {});
+    }
     setGuestRoom(null);
     setSelectedGuestFile(null);
     setGuestSummary(null);
@@ -790,6 +826,9 @@ export default function App() {
     setGuestDocResult(null);
     setRoomCode("");
     setJoinRoomError(null);
+    setIsFollowingLead(false);
+    setLeadError(null);
+    lastLeadNavRef.current = "";
     setIsRoomCodeModalOpen(false);
   };
 
@@ -1023,7 +1062,7 @@ export default function App() {
   };
 
 
-  const closeGuestDocument = () => {
+  const closeGuestDocumentInternal = () => {
     setSelectedGuestFile(null);
     setGuestSummary(null);
     setGuestSummaryError(null);
@@ -1034,9 +1073,15 @@ export default function App() {
     setGuestFocusedItem(null);
   };
 
-  const openGuestDocument = async (roomFile: RoomFileItem) => {
+  const closeGuestDocument = () => {
+    if (!isRoomLead) setIsFollowingLead(false);
+    closeGuestDocumentInternal();
+  };
+
+  const openGuestDocument = async (roomFile: RoomFileItem, options?: { initialPage?: number; fromLead?: boolean }) => {
+    if (!options?.fromLead && !isRoomLead) setIsFollowingLead(false);
     setSelectedGuestFile(roomFile);
-    setGuestPageIndex(0);
+    setGuestPageIndex(Math.max(0, (options?.initialPage || 1) - 1));
     setGuestSummary(null);
     setGuestSummaryError(null);
     setGuestDocResult(null);
@@ -1079,6 +1124,162 @@ export default function App() {
     } finally {
       setGuestDocLoading(false);
     }
+  };
+
+  const postRoomLeadAction = async (action: string, extra: Record<string, any> = {}) => {
+    if (!guestRoom) throw new Error("Join a room first.");
+    const res = await fetch("/api/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, code: guestRoom.code, leadId: guestClientId, ...extra }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Server responded with status ${res.status}`);
+    setGuestRoom((prev) => (prev ? { ...prev, files: Array.isArray(data.files) ? data.files : prev.files, lead: data.lead || null } : prev));
+    return data;
+  };
+
+  const claimRoomLead = async () => {
+    if (!guestRoom || leadActionBusy) return;
+    setLeadActionBusy(true);
+    setLeadError(null);
+    try {
+      await postRoomLeadAction("lead-claim", { leadName: "Guest" });
+      setIsFollowingLead(false);
+      lastLeadNavRef.current = "";
+    } catch (err: any) {
+      setLeadError(err.message || "Could not start Lead.");
+    } finally {
+      setLeadActionBusy(false);
+    }
+  };
+
+  const stopRoomLead = async () => {
+    if (!guestRoom || leadActionBusy) return;
+    setLeadActionBusy(true);
+    setLeadError(null);
+    try {
+      await postRoomLeadAction("lead-stop");
+      lastLeadNavRef.current = "";
+    } catch (err: any) {
+      setLeadError(err.message || "Could not stop Lead.");
+    } finally {
+      setLeadActionBusy(false);
+    }
+  };
+
+  const publishLeadNavigation = async (view: "files" | "document", targetFile: RoomFileItem | null, page: number) => {
+    if (!guestRoom || !isRoomLead) return;
+    const payload = {
+      view,
+      filePath: view === "document" ? targetFile?.path || null : null,
+      fileName: view === "document" ? targetFile?.name || null : null,
+      page: Math.max(1, page || 1),
+    };
+    const key = JSON.stringify(payload);
+    if (lastLeadNavRef.current === key) return;
+    lastLeadNavRef.current = key;
+    try {
+      await postRoomLeadAction("lead-nav", payload);
+    } catch (_) {
+      // Lead navigation is best-effort; the next page change will try again.
+      lastLeadNavRef.current = "";
+    }
+  };
+
+  const goToLeadLocation = async (lead: RoomLead) => {
+    if (!guestRoom) return;
+    if (lead.view === "document" && lead.filePath) {
+      const targetFile = guestRoom.files.find((f) => f.path === lead.filePath);
+      if (!targetFile) return;
+      if (!selectedGuestFile || selectedGuestFile.path !== targetFile.path) {
+        await openGuestDocument(targetFile, { initialPage: lead.page || 1, fromLead: true });
+      } else if (guestPageIndex !== Math.max(0, (lead.page || 1) - 1)) {
+        setGuestPageIndex(Math.max(0, (lead.page || 1) - 1));
+      }
+    } else if (selectedGuestFile) {
+      closeGuestDocumentInternal();
+    }
+  };
+
+  const goToLeadLive = async () => {
+    if (!roomLead) return;
+    setLeadError(null);
+    setIsFollowingLead(true);
+    await goToLeadLocation(roomLead);
+  };
+
+  // Keep this guest's view of the room (files + Lead) fresh.
+  useEffect(() => {
+    if (profileRole !== "Guest" || !guestRoom?.code) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/rooms?code=${encodeURIComponent(guestRoom.code)}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok) {
+          setGuestRoom((prev) => (prev && prev.code === String(data.code || prev.code) ? { ...prev, files: Array.isArray(data.files) ? data.files : prev.files, lead: data.lead || null, endedAt: data.endedAt || null } : prev));
+        } else if (res.status === 410) {
+          setLeadError("This room has ended.");
+        }
+      } catch (_) {}
+    };
+    const intervalId = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [profileRole, guestRoom?.code]);
+
+  // When this guest is the Lead, publish where they are (debounced).
+  useEffect(() => {
+    if (!guestRoom || !isRoomLead) return;
+    if (leadNavTimerRef.current) window.clearTimeout(leadNavTimerRef.current);
+    leadNavTimerRef.current = window.setTimeout(() => {
+      publishLeadNavigation(selectedGuestFile ? "document" : "files", selectedGuestFile, guestPageIndex + 1);
+    }, 500);
+    return () => {
+      if (leadNavTimerRef.current) window.clearTimeout(leadNavTimerRef.current);
+    };
+  }, [guestRoom?.code, isRoomLead, selectedGuestFile?.path, guestPageIndex]);
+
+  // Followers who tapped Lead Live mirror the Lead's document/page.
+  useEffect(() => {
+    if (!isFollowingLead || !roomLead || isRoomLead) return;
+    if (roomLead.view === "document" && roomLead.filePath) {
+      void goToLeadLocation(roomLead);
+    } else if (selectedGuestFile) {
+      closeGuestDocumentInternal();
+    }
+  }, [isFollowingLead, isRoomLead, roomLead?.updatedAt, roomLead?.view, roomLead?.filePath, roomLead?.page, selectedGuestFile?.path, guestPageIndex]);
+
+  const renderLeadControls = () => {
+    if (!guestRoom) return null;
+    if (isRoomLead) {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold" id="lead-active-badge">You are Lead</span>
+          <button type="button" onClick={stopRoomLead} disabled={leadActionBusy} className="px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-all" id="stop-lead-btn">Stop Lead</button>
+          {leadError && <span className="text-[11px] text-red-600 dark:text-red-400 max-w-[180px] truncate" title={leadError}>{leadError}</span>}
+        </div>
+      );
+    }
+    if (hasLiveLead) {
+      return (
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={isFollowingLead ? () => setIsFollowingLead(false) : goToLeadLive} className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-500 transition-colors" id="lead-live-btn">{isFollowingLead ? "Following Lead" : "Lead Live"}</button>
+          {roomLead?.fileName && <span className="text-[11px] text-neutral-400 dark:text-neutral-500 max-w-[160px] truncate hidden md:inline" title={roomLead.fileName}>{roomLead.fileName} · Page {roomLead.page || 1}</span>}
+          {leadError && <span className="text-[11px] text-red-600 dark:text-red-400 max-w-[180px] truncate" title={leadError}>{leadError}</span>}
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={claimRoomLead} disabled={leadActionBusy} className="px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity" id="lead-btn">Lead</button>
+        {leadError && <span className="text-[11px] text-red-600 dark:text-red-400 max-w-[180px] truncate" title={leadError}>{leadError}</span>}
+      </div>
+    );
   };
 
   const getGuestPdfDocument = async () => {
@@ -1331,15 +1532,18 @@ export default function App() {
         <>
           {selectedGuestFile ? (
             <main id="guest-document-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
-              <div className="flex items-center gap-3 mb-4">
-                <button type="button" onClick={closeGuestDocument} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all" id="back-to-guest-room-btn">
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Back to Room Files</span>
-                </button>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate" title={selectedGuestFile.name}>{selectedGuestFile.name}</p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">Room {guestRoom?.code} · {formatUploadedDateTime(selectedGuestFile.uploadedAt)}</p>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button type="button" onClick={closeGuestDocument} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all shrink-0" id="back-to-guest-room-btn">
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Back to Room Files</span>
+                  </button>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate" title={selectedGuestFile.name}>{selectedGuestFile.name}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">Room {guestRoom?.code} · {formatUploadedDateTime(selectedGuestFile.uploadedAt)}</p>
+                  </div>
                 </div>
+                {renderLeadControls()}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start flex-1">
@@ -1393,9 +1597,9 @@ export default function App() {
                   )}
                   {guestDocResult && guestDocResult.pagesCount > 1 && (
                     <div className="flex items-center justify-between p-3 border-t border-neutral-200 dark:border-neutral-800">
-                      <button type="button" onClick={() => setGuestPageIndex((prev) => Math.max(0, prev - 1))} disabled={guestPageIndex === 0} className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1 text-xs font-semibold" id="guest-doc-prev-btn"><ChevronLeft className="w-4 h-4" /><span>Previous</span></button>
+                      <button type="button" onClick={() => { if (!isRoomLead) setIsFollowingLead(false); setGuestPageIndex((prev) => Math.max(0, prev - 1)); }} disabled={guestPageIndex === 0} className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1 text-xs font-semibold" id="guest-doc-prev-btn"><ChevronLeft className="w-4 h-4" /><span>Previous</span></button>
                       <span className="text-xs text-neutral-500">Page <b>{guestPageIndex + 1}</b> of <b>{guestDocResult.pagesCount}</b></span>
-                      <button type="button" onClick={() => setGuestPageIndex((prev) => Math.min(guestDocResult.pagesCount - 1, prev + 1))} disabled={guestPageIndex === guestDocResult.pagesCount - 1} className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1 text-xs font-semibold" id="guest-doc-next-btn"><span>Next</span><ChevronRight className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => { if (!isRoomLead) setIsFollowingLead(false); setGuestPageIndex((prev) => Math.min(guestDocResult.pagesCount - 1, prev + 1)); }} disabled={guestPageIndex === guestDocResult.pagesCount - 1} className="p-1.5 border border-neutral-200 dark:border-neutral-800 rounded-lg hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1 text-xs font-semibold" id="guest-doc-next-btn"><span>Next</span><ChevronRight className="w-4 h-4" /></button>
                     </div>
                   )}
                 </section>
@@ -1411,7 +1615,7 @@ export default function App() {
                     {guestDocLoading && !guestSummary ? (
                       <div className="py-10 flex flex-col items-center text-neutral-400"><Loader2 className="w-6 h-6 animate-spin mb-2" /><p className="text-xs">Loading summary…</p></div>
                     ) : guestSummary ? (
-                      <SummaryView summary={guestSummary} pagesCount={guestDocResult?.pagesCount || null} currentPage={guestPageIndex + 1} onPageChange={(page) => setGuestPageIndex(page - 1)} contentId="guest-ai-summary-content" compact />
+                      <SummaryView summary={guestSummary} pagesCount={guestDocResult?.pagesCount || null} currentPage={guestPageIndex + 1} onPageChange={(page) => { if (!isRoomLead) setIsFollowingLead(false); setGuestPageIndex(page - 1); }} contentId="guest-ai-summary-content" compact />
                     ) : (
                       <div className="py-8 text-center text-neutral-400">
                         <Sparkles className="w-8 h-8 mx-auto mb-2" />
@@ -1434,7 +1638,8 @@ export default function App() {
                     </h2>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Files shared in this room. Click a file to view it.</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                    {renderLeadControls()}
                     <button
                       type="button"
                       onClick={() => { setRoomCode(""); setJoinRoomError(null); setIsRoomCodeModalOpen(true); }}

@@ -158,7 +158,16 @@
       "createdAt": "2026-10-03T02:47:34.802Z",
       "startedAt": "2026-10-03T02:47:34.802Z",
       "endedAt": null,
-      "lead": null
+      "lead": {
+        "id": "guest-wq4co2ua-murq58vv",
+        "name": "Guest",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-03T02:48:03.775Z",
+        "live": true
+      }
     }
   ]
 }

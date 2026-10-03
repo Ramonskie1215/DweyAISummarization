@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
     }
 
     // Default or custom selected model
-    const selectedModel = model || process.env.AI_MODEL || "[满血]deepseek-v4-flash";
+    const selectedModel = model || process.env.AI_MODEL || "openrouter/free";
 
     // Build structured guidelines based on length and style requested
     const summaryLengthText = length || "Medium";
@@ -64,7 +64,7 @@ ${text}
     if (!apiKey) {
       return res.status(500).json({ error: "AI API key is not configured on the server. Set the AI_API_KEY environment variable." });
     }
-    const aiBaseUrl = (process.env.AI_API_BASE_URL || "https://beizhi.dedyn.io/v1").replace(/\/+$/, "");
+    const aiBaseUrl = (process.env.AI_API_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
 
     const response = await fetch(`${aiBaseUrl}/chat/completions`, {
       method: "POST",

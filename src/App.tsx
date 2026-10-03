@@ -249,6 +249,8 @@ export default function App() {
   const [docSelectionAnchor, setDocSelectionAnchor] = useState<number | null>(null);
   const [docSelectionEnd, setDocSelectionEnd] = useState<number | null>(null);
   const [copiedDocSelection, setCopiedDocSelection] = useState(false);
+  // Traced boxes stay hidden until the user taps an open area of the page
+  const [showDocTraces, setShowDocTraces] = useState(false);
   const [appView, setAppView] = useState<"files" | "upload">("files");
   const [profileRole, setProfileRole] = useState<"Admin" | "Guest">(() => {
     const saved = localStorage.getItem("dwey-profile");
@@ -287,6 +289,11 @@ export default function App() {
   const [guestPageIndex, setGuestPageIndex] = useState(0);
   const [guestDocRendering, setGuestDocRendering] = useState(false);
   const [guestFocusedItem, setGuestFocusedItem] = useState<number | null>(null);
+  // Guest traced boxes also stay hidden until an open-area tap shows them
+  const [guestShowTraces, setGuestShowTraces] = useState(false);
+  const [guestSelectionAnchor, setGuestSelectionAnchor] = useState<number | null>(null);
+  const [guestSelectionEnd, setGuestSelectionEnd] = useState<number | null>(null);
+  const [guestCopiedSelection, setGuestCopiedSelection] = useState(false);
   const [guestClientId] = useState<string>(() => {
     const saved = localStorage.getItem("dwey-guest-id");
     if (saved) return saved;
@@ -455,6 +462,7 @@ export default function App() {
     setSummaryResult(null);
     setSummarizationError(null);
     setCurrentPageIndex(0);
+    setShowDocTraces(false);
 
     try {
       const result = await extractTextFromPDF(
@@ -1071,6 +1079,10 @@ export default function App() {
     setGuestDocError(null);
     setGuestPageIndex(0);
     setGuestFocusedItem(null);
+    setGuestShowTraces(false);
+    setGuestSelectionAnchor(null);
+    setGuestSelectionEnd(null);
+    setGuestCopiedSelection(false);
   };
 
   const closeGuestDocument = () => {
@@ -1087,6 +1099,10 @@ export default function App() {
     setGuestDocResult(null);
     setGuestPdfFile(null);
     setGuestDocError(null);
+    setGuestShowTraces(false);
+    setGuestSelectionAnchor(null);
+    setGuestSelectionEnd(null);
+    setGuestCopiedSelection(false);
     setGuestDocLoading(true);
     try {
       // Saved AI summary (companion file) — no need to call AI again.
@@ -1304,6 +1320,9 @@ export default function App() {
     let cancelled = false;
     setGuestDocRendering(true);
     setGuestFocusedItem(null);
+    setGuestSelectionAnchor(null);
+    setGuestSelectionEnd(null);
+    setGuestCopiedSelection(false);
     (async () => {
       try {
         const pdf = await getGuestPdfDocument();
@@ -1350,6 +1369,55 @@ export default function App() {
       }
     };
   }, [selectedGuestFile, guestPdfFile, guestDocResult, guestPageIndex]);
+
+  // Double-click selection on the Guest document view, same as the Admin one:
+  // first double-click sets the anchor, a second on another word selects the
+  // whole range between them. Double-clicking the range end again drops the
+  // range and keeps just the first text; double-clicking the anchor clears it.
+  const guestPageItems = guestDocResult?.pageLayouts?.[guestPageIndex]?.items || [];
+  const guestSelLo = guestSelectionAnchor !== null && guestSelectionEnd !== null ? Math.min(guestSelectionAnchor, guestSelectionEnd) : null;
+  const guestSelHi = guestSelectionAnchor !== null && guestSelectionEnd !== null ? Math.max(guestSelectionAnchor, guestSelectionEnd) : null;
+  const selectedGuestText = guestSelLo !== null && guestSelHi !== null
+    ? guestPageItems.slice(guestSelLo, guestSelHi + 1).map((it) => it.str).join(" ").replace(/\s+/g, " ").trim()
+    : "";
+
+  const handleGuestItemDoubleClick = (idx: number) => {
+    if (guestSelectionAnchor === null) {
+      setGuestSelectionAnchor(idx);
+      setGuestSelectionEnd(idx);
+    } else if (idx === guestSelectionEnd && guestSelectionEnd !== guestSelectionAnchor) {
+      // Double-clicked the range end again: drop the range, keep the first text
+      setGuestSelectionEnd(guestSelectionAnchor);
+    } else if (idx === guestSelectionAnchor) {
+      setGuestSelectionAnchor(null);
+      setGuestSelectionEnd(null);
+    } else {
+      setGuestSelectionEnd(idx);
+    }
+    setGuestCopiedSelection(false);
+  };
+
+  const clearGuestSelection = () => {
+    setGuestSelectionAnchor(null);
+    setGuestSelectionEnd(null);
+    setGuestCopiedSelection(false);
+  };
+
+  const copyGuestSelection = async () => {
+    if (!selectedGuestText) return;
+    try {
+      await navigator.clipboard.writeText(selectedGuestText);
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = selectedGuestText;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (__) {}
+      document.body.removeChild(ta);
+    }
+    setGuestCopiedSelection(true);
+    setTimeout(() => setGuestCopiedSelection(false), 2000);
+  };
 
   // Summarize action
   const handleSummarize = async () => {
@@ -1575,14 +1643,18 @@ export default function App() {
                         const renderHeight = renderWidth / (pageLayout.width / pageLayout.height);
                         const scale = renderWidth / pageLayout.width;
                         return (
-                          <div className="relative bg-white shadow-md rounded overflow-hidden mx-auto" style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} id="guest-actual-document-sheet">
+                          <div className="relative bg-white shadow-md rounded overflow-hidden mx-auto cursor-pointer" style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} id="guest-actual-document-sheet" onClick={() => setGuestShowTraces((prev) => !prev)} title={guestShowTraces ? "Tap an open area to hide the traced text" : "Tap an open area to show the traced text"}>
                             <canvas ref={guestCanvasRef} style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} className="block" />
                             {guestDocRendering && (
                               <div className="absolute inset-0 bg-white/70 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-neutral-500" /></div>
                             )}
-                            {pageLayout.items.map((item, idx) => (
-                              <div key={idx} onMouseEnter={() => setGuestFocusedItem(idx)} onMouseLeave={() => setGuestFocusedItem(null)} title={item.str} className={`absolute cursor-pointer transition-colors ${guestFocusedItem === idx ? "bg-amber-300/50 border border-amber-500 z-10" : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"}`} style={{ left: `${item.x * scale}px`, top: `${item.y * scale}px`, width: `${Math.max(item.width * scale, 4)}px`, height: `${Math.max(item.height * scale, 6)}px` }} />
-                            ))}
+                            {guestShowTraces && pageLayout.items.map((item, idx) => {
+                              const isGuestFocused = guestFocusedItem === idx;
+                              const isGuestSelected = guestSelLo !== null && guestSelHi !== null && idx >= guestSelLo && idx <= guestSelHi;
+                              return (
+                                <div key={idx} onMouseEnter={() => setGuestFocusedItem(idx)} onMouseLeave={() => setGuestFocusedItem(null)} onClick={(e) => e.stopPropagation()} onDoubleClick={() => handleGuestItemDoubleClick(idx)} title={item.str} className={`absolute cursor-pointer transition-colors ${isGuestSelected ? "bg-blue-500/35 border border-blue-600 z-10" : isGuestFocused ? "bg-amber-300/50 border border-amber-500 z-10" : "bg-sky-400/10 border border-sky-500/30 hover:bg-sky-300/30"}`} style={{ left: `${item.x * scale}px`, top: `${item.y * scale}px`, width: `${Math.max(item.width * scale, 4)}px`, height: `${Math.max(item.height * scale, 6)}px` }} />
+                              );
+                            })}
                           </div>
                         );
                       })()
@@ -1590,9 +1662,22 @@ export default function App() {
                       <div className="py-12 text-center text-neutral-400 text-xs">No document preview available.</div>
                     )}
                   </div>
-                  {guestFocusedItem !== null && guestDocResult?.pageLayouts?.[guestPageIndex]?.items?.[guestFocusedItem] && (
-                    <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-400 truncate">
-                      <span className="font-semibold">Traced Text:</span> {guestDocResult.pageLayouts[guestPageIndex].items[guestFocusedItem].str}
+                  {(selectedGuestText || (guestFocusedItem !== null && guestDocResult?.pageLayouts?.[guestPageIndex]?.items?.[guestFocusedItem])) && (
+                    <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-400 flex flex-nowrap items-center gap-3">
+                      <span className="font-semibold shrink-0">Traced Text:</span>
+                      {selectedGuestText ? (
+                        <>
+                          <span className="truncate flex-1 min-w-0" title={selectedGuestText}>{selectedGuestText}</span>
+                          <button type="button" onClick={copyGuestSelection} className="shrink-0 px-2 py-1 rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-[11px] font-semibold hover:opacity-90 transition-opacity">
+                            {guestCopiedSelection ? "Copied!" : "Copy"}
+                          </button>
+                          <button type="button" onClick={clearGuestSelection} className="shrink-0 px-2 py-1 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 text-[11px] font-semibold">
+                            Clear
+                          </button>
+                        </>
+                      ) : (
+                        <span className="truncate">{guestDocResult.pageLayouts[guestPageIndex].items[guestFocusedItem].str}</span>
+                      )}
                     </div>
                   )}
                   {guestDocResult && guestDocResult.pagesCount > 1 && (
@@ -2661,9 +2746,11 @@ export default function App() {
 
                               return (
                                 <div
-                                  className="relative bg-white dark:bg-neutral-800 shadow-md select-none rounded overflow-hidden shrink-0"
+                                  className="relative bg-white dark:bg-neutral-800 shadow-md select-none rounded overflow-hidden shrink-0 cursor-pointer"
                                   style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }}
                                   id="actual-document-sheet"
+                                  onClick={() => setShowDocTraces((prev) => !prev)}
+                                  title={showDocTraces ? "Tap an open area to hide the traced text" : "Tap an open area to show the traced text"}
                                 >
                                   <canvas
                                     ref={docCanvasRef}
@@ -2675,7 +2762,7 @@ export default function App() {
                                       <Loader2 className="w-5 h-5 animate-spin text-neutral-500" />
                                     </div>
                                   )}
-                                  {pageLayout.items.map((item, idx) => {
+                                  {showDocTraces && pageLayout.items.map((item, idx) => {
                                     const isFocused = focusedDocItem === idx;
                                     const isSelected = docSelLo !== null && docSelHi !== null && idx >= docSelLo && idx <= docSelHi;
                                     return (
@@ -2683,6 +2770,7 @@ export default function App() {
                                         key={idx}
                                         onMouseEnter={() => setFocusedDocItem(idx)}
                                         onMouseLeave={() => setFocusedDocItem(null)}
+                                        onClick={(e) => e.stopPropagation()}
                                         onDoubleClick={() => handleDocItemDoubleClick(idx)}
                                         className={`absolute cursor-pointer transition-colors duration-75 ${
                                           isSelected

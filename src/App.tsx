@@ -40,7 +40,190 @@ const FIXED_SUMMARY_SETTINGS = {
   format: "page-ranges",
 } as const;
 
+
 type RoomFileItem = { name: string; size: number; path: string; uploadedAt?: string | null };
+
+type SummaryRangeEntry = {
+  start: number;
+  end: number;
+  title: string;
+  markdown: string;
+};
+
+function matchSummaryRangeStart(line: string): { start: number; end: number; title: string; rest: string } | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const isHeading = /^#{1,6}\s+/.test(trimmed);
+  const isListItem = /^[-*]\s+/.test(trimmed);
+  const isBoldLabel = /^\*\*/.test(trimmed);
+  if (!isHeading && !isListItem && !isBoldLabel && trimmed.length > 160) return null;
+
+  const clean = trimmed
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^[-*]\s+/, "")
+    .replace(/\*\*/g, "")
+    .trim();
+
+  const rangeMatch = clean.match(/pages?\s+(\d+)\s*(?:-|–|—|to)\s*(\d+)/i);
+  const singleMatch = !rangeMatch ? clean.match(/page\s+(\d+)\b/i) : null;
+  if (!rangeMatch && !singleMatch) return null;
+  if (!isHeading && !isListItem && !isBoldLabel && !/:\s|—|–|\s-\s/.test(clean)) return null;
+
+  const start = Number((rangeMatch || singleMatch)![1]);
+  const end = rangeMatch ? Number(rangeMatch[2]) : start;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 1 || end < start) return null;
+
+  const colonIndex = clean.indexOf(":");
+  const title = (!isHeading && colonIndex > -1 ? clean.slice(0, colonIndex) : clean).trim();
+  const rest = !isHeading && colonIndex > -1 ? clean.slice(colonIndex + 1).trim() : "";
+  return { start, end, title: title || `Pages ${start}-${end}`, rest };
+}
+
+function parseSummaryRangeEntries(summary: string): SummaryRangeEntry[] {
+  const lines = String(summary || "").split(/\r?\n/);
+  const sectionLines: string[] = [];
+  let inBreakdown = false;
+  let breakdownLevel = 2;
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2] || "";
+      if (/page\s+range\s+breakdown/i.test(text)) {
+        inBreakdown = true;
+        breakdownLevel = level;
+        continue;
+      }
+      if (inBreakdown && level <= breakdownLevel) break;
+    }
+    if (inBreakdown) sectionLines.push(line);
+  }
+
+  const workingLines = sectionLines.length ? sectionLines : lines;
+  const entries: Array<{ start: number; end: number; title: string; bodyLines: string[] }> = [];
+  let current: { start: number; end: number; title: string; bodyLines: string[] } | null = null;
+
+  for (const line of workingLines) {
+    const startMatch = matchSummaryRangeStart(line);
+    if (startMatch) {
+      if (current) entries.push(current);
+      current = {
+        start: startMatch.start,
+        end: startMatch.end,
+        title: startMatch.title,
+        bodyLines: startMatch.rest ? [startMatch.rest] : [],
+      };
+    } else if (current) {
+      current.bodyLines.push(line);
+    }
+  }
+  if (current) entries.push(current);
+
+  return entries
+    .map((entry) => {
+      const body = entry.bodyLines.join("\n").trim();
+      return {
+        start: entry.start,
+        end: entry.end,
+        title: entry.title,
+        markdown: `### ${entry.title}${body ? `\n\n${body}` : ""}`,
+      };
+    })
+    .sort((a, b) => a.start - b.start);
+}
+
+type SummaryViewProps = {
+  summary: string;
+  pagesCount?: number | null;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
+  contentId?: string;
+  compact?: boolean;
+};
+
+function SummaryView({ summary, pagesCount, currentPage, onPageChange, contentId, compact }: SummaryViewProps) {
+  const [mode, setMode] = useState<"full" | "per-page">("full");
+  const [internalPage, setInternalPage] = useState(1);
+
+  useEffect(() => {
+    setMode("full");
+    setInternalPage(1);
+  }, [summary]);
+
+  const entries = parseSummaryRangeEntries(summary);
+  const maxEntryPage = entries.reduce((max, entry) => Math.max(max, entry.end), 0);
+  const totalPages = Math.max(1, pagesCount || maxEntryPage || 1);
+  const rawPage = onPageChange ? (currentPage || 1) : internalPage;
+  const page = Math.min(Math.max(1, rawPage), totalPages);
+  const setPage = (nextPage: number) => {
+    const clamped = Math.min(Math.max(1, nextPage), totalPages);
+    if (onPageChange) onPageChange(clamped);
+    else setInternalPage(clamped);
+  };
+  const activeEntry = entries.find((entry) => page >= entry.start && page <= entry.end) || null;
+  const proseClass = compact
+    ? "prose prose-neutral prose-sm max-w-none"
+    : "prose prose-neutral max-w-none prose-sm md:prose-base leading-relaxed";
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="inline-flex bg-neutral-100 dark:bg-neutral-800 rounded-full p-1 border border-neutral-200 dark:border-neutral-700" role="group" aria-label="Summary view mode">
+          {(["Full", "Per Page"] as const).map((label) => {
+            const value = label === "Full" ? "full" : "per-page";
+            const active = mode === value;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setMode(value)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                  active
+                    ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 shadow-sm"
+                    : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                }`}
+                id={`${contentId || "summary"}-${value}-btn`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {mode === "per-page" && (
+          <div className="flex items-center gap-2 text-xs">
+            <button type="button" onClick={() => setPage(page - 1)} disabled={page <= 1} className="p-1.5 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 flex items-center gap-1 font-semibold" id={`${contentId || "summary"}-prev-page-btn`}>
+              <ChevronLeft className="w-4 h-4" />
+              <span>Prev</span>
+            </button>
+            <span className="text-neutral-500 dark:text-neutral-400 whitespace-nowrap">Page <b>{page}</b> of <b>{totalPages}</b></span>
+            <button type="button" onClick={() => setPage(page + 1)} disabled={page >= totalPages} className="p-1.5 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 flex items-center gap-1 font-semibold" id={`${contentId || "summary"}-next-page-btn`}>
+              <span>Next</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {mode === "per-page" && activeEntry && activeEntry.end > activeEntry.start && (
+        <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mb-3">Showing the shared summary for Pages {activeEntry.start}-{activeEntry.end}.</p>
+      )}
+
+      <div className={proseClass} id={contentId}>
+        {mode === "full" ? (
+          <Markdown>{summary}</Markdown>
+        ) : activeEntry ? (
+          <Markdown>{activeEntry.markdown}</Markdown>
+        ) : entries.length ? (
+          <p>No page-range summary was found for Page {page}. Try another page or switch back to Full.</p>
+        ) : (
+          <p>No page-range breakdown was found in this summary yet, so Per Page cannot split it. The Full summary is still available above.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 export default function App() {
   // File and extraction states
@@ -1188,7 +1371,7 @@ export default function App() {
                     {guestDocLoading && !guestSummary ? (
                       <div className="py-10 flex flex-col items-center text-neutral-400"><Loader2 className="w-6 h-6 animate-spin mb-2" /><p className="text-xs">Loading summary…</p></div>
                     ) : guestSummary ? (
-                      <div className="prose prose-neutral prose-sm max-w-none" id="guest-ai-summary-content"><Markdown>{guestSummary}</Markdown></div>
+                      <SummaryView summary={guestSummary} pagesCount={guestDocResult?.pagesCount || null} currentPage={guestPageIndex + 1} onPageChange={(page) => setGuestPageIndex(page - 1)} contentId="guest-ai-summary-content" compact />
                     ) : (
                       <div className="py-8 text-center text-neutral-400">
                         <Sparkles className="w-8 h-8 mx-auto mb-2" />
@@ -1910,9 +2093,7 @@ export default function App() {
                       </button>
                     </div>
                   ) : summaryResult ? (
-                    <div className="prose prose-neutral max-w-none prose-sm md:prose-base leading-relaxed" id="markdown-container">
-                      <Markdown>{summaryResult}</Markdown>
-                    </div>
+                    <SummaryView summary={summaryResult} pagesCount={extractionResult?.pagesCount || null} currentPage={currentPageIndex + 1} onPageChange={(page) => setCurrentPageIndex(page - 1)} contentId="markdown-container" />
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400 dark:text-neutral-500">
                       <div className="p-4 bg-neutral-50 dark:bg-neutral-950 text-neutral-400 dark:text-neutral-500 rounded-full border border-neutral-100 dark:border-neutral-800 mb-4">
@@ -2435,8 +2616,8 @@ export default function App() {
                       <span>Done — summary & trace boxes saved with this file</span>
                     </div>
                     {showUploadSummary ? (
-                      <div className="mt-3 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 max-h-64 overflow-y-auto prose prose-neutral prose-sm max-w-none" id="upload-modal-summary-preview">
-                        <Markdown>{summaryResult}</Markdown>
+                      <div className="mt-3 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 max-h-64 overflow-y-auto" id="upload-modal-summary-preview">
+                        <SummaryView summary={summaryResult} pagesCount={extractionResult?.pagesCount || null} contentId="upload-modal-summary-content" compact />
                       </div>
                     ) : null}
                     <button type="button" onClick={() => setShowUploadSummary((prev) => !prev)} className="mt-4 w-full border border-neutral-200 dark:border-neutral-700 rounded-lg py-2.5 px-4 font-semibold text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors" id="toggle-upload-summary-btn">{showUploadSummary ? "Hide AI Summarize" : "Show AI Summarize"}</button>

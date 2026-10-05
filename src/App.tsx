@@ -343,7 +343,7 @@ export default function App() {
   const [isRoomCodeModalOpen, setIsRoomCodeModalOpen] = useState(false);
   const [guestDrawerView, setGuestDrawerView] = useState<"join" | "terms" | "about">("join");
   const [guestAboutExpanded, setGuestAboutExpanded] = useState(false);
-  const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState(false);
+  const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState<boolean>(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
   const [selectedRoomFilePaths, setSelectedRoomFilePaths] = useState<string[]>([]);
   const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);
   const [isHostingRoom, setIsHostingRoom] = useState(false);
@@ -1845,6 +1845,17 @@ Explain in simple, everyday words what the highlighted text means in this specif
       {/* MAIN LAYOUT */}
       {profileRole === "Guest" ? (
         <div className="flex flex-1 min-h-0 relative" id="guest-layout">
+          {!isGuestDrawerOpen && (
+            <button
+              type="button"
+              onClick={() => setIsGuestDrawerOpen(true)}
+              className="hidden md:flex absolute top-3 left-3 z-20 p-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 shadow-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+              aria-label="Open menu"
+              id="guest-drawer-reopen-btn"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
           {isGuestDrawerOpen && (
             <div
               className="fixed inset-0 z-30 bg-black/40 md:hidden"
@@ -1854,7 +1865,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
           )}
           <aside
             id="guest-drawer"
-            className={`fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col shadow-xl md:shadow-none ${isGuestDrawerOpen ? "flex" : "hidden md:flex"}`}
+            className={`fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col shadow-xl md:shadow-none ${isGuestDrawerOpen ? "flex" : "hidden"}`}
           >
             <div className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
               <div className="flex items-start justify-between gap-2">
@@ -1865,7 +1876,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
                 <button
                   type="button"
                   onClick={() => setIsGuestDrawerOpen(false)}
-                  className="md:hidden p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                   aria-label="Close menu"
                   id="guest-drawer-close-btn"
                 >

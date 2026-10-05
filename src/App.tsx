@@ -17,6 +17,8 @@ import {
   X, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
+  Menu,
   FileCheck,
   Info,
   LayoutGrid,
@@ -339,6 +341,9 @@ export default function App() {
   });
   const [roomCode, setRoomCode] = useState("");
   const [isRoomCodeModalOpen, setIsRoomCodeModalOpen] = useState(false);
+  const [guestDrawerView, setGuestDrawerView] = useState<"join" | "terms" | "about">("join");
+  const [guestAboutExpanded, setGuestAboutExpanded] = useState(false);
+  const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState(false);
   const [selectedRoomFilePaths, setSelectedRoomFilePaths] = useState<string[]>([]);
   const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);
   const [isHostingRoom, setIsHostingRoom] = useState(false);
@@ -1839,7 +1844,99 @@ Explain in simple, everyday words what the highlighted text means in this specif
 
       {/* MAIN LAYOUT */}
       {profileRole === "Guest" ? (
-        <>
+        <div className="flex flex-1 min-h-0 relative" id="guest-layout">
+          {isGuestDrawerOpen && (
+            <div
+              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              onClick={() => setIsGuestDrawerOpen(false)}
+              id="guest-drawer-backdrop"
+            />
+          )}
+          <aside
+            id="guest-drawer"
+            className={`fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col shadow-xl md:shadow-none ${isGuestDrawerOpen ? "flex" : "hidden md:flex"}`}
+          >
+            <div className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h1 className="text-lg font-bold tracking-tight text-neutral-900 dark:text-neutral-100">EcoLegis</h1>
+                  <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 mt-1">Legislative Document Management & AI Summary System</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGuestDrawerOpen(false)}
+                  className="md:hidden p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  aria-label="Close menu"
+                  id="guest-drawer-close-btn"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Guest menu">
+              <button
+                type="button"
+                onClick={() => { setGuestDrawerView("join"); setJoinRoomError(null); setIsRoomCodeModalOpen(true); setIsGuestDrawerOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${guestDrawerView === "join" && !guestRoom ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900" : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+                id="guest-drawer-join-room-btn"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>Join Room</span>
+              </button>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setGuestAboutExpanded((v) => !v)}
+                  aria-expanded={guestAboutExpanded}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  id="guest-drawer-about-toggle-btn"
+                >
+                  <Info className="w-4 h-4" />
+                  <span className="flex-1 text-left">About</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${guestAboutExpanded ? "rotate-180" : ""}`} />
+                </button>
+                {guestAboutExpanded && (
+                  <div className="mt-1 ml-4 pl-2 border-l border-neutral-200 dark:border-neutral-700 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => { setGuestDrawerView("terms"); setIsGuestDrawerOpen(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${guestDrawerView === "terms" ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+                      id="guest-drawer-terms-btn"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Terms and Conditions</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setGuestDrawerView("about"); setIsGuestDrawerOpen(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${guestDrawerView === "about" ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+                      id="guest-drawer-about-page-btn"
+                    >
+                      <Info className="w-4 h-4" />
+                      <span>About</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </nav>
+            <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800">
+              <p className="text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">Guest access is read-only. Ask your host for a 6-digit room code to view their shared documents.</p>
+            </div>
+          </aside>
+          <div className="flex-1 min-w-0 flex flex-col min-h-0" id="guest-content">
+            <div className="md:hidden flex items-center gap-2 px-3 py-2.5 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsGuestDrawerOpen(true)}
+                className="p-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Open menu"
+                id="guest-drawer-open-btn"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <span className="text-sm font-bold text-neutral-900 dark:text-neutral-100">EcoLegis</span>
+              <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Guest</span>
+            </div>
           {selectedGuestFile ? (
             <main id="guest-document-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
               <div className="flex items-center justify-between gap-3 mb-4">
@@ -2072,17 +2169,73 @@ Explain in simple, everyday words what the highlighted text means in this specif
                 </div>
               </div>
             </main>
+          ) : guestDrawerView === "terms" ? (
+            <main id="guest-terms-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8">
+              <div className="max-w-3xl mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm p-6 md:p-8">
+                <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">Terms and Conditions</h2>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Last updated October 2026</p>
+                <div className="mt-6 space-y-5 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+                  <section>
+                    <h3 className="font-bold text-neutral-900 dark:text-neutral-100 mb-1">1. Guest access</h3>
+                    <p>EcoLegis Guest mode lets you view legislative documents and AI-generated summaries shared with you through a hosted room. Guest access is read-only: you can open documents, read summaries, and follow the room Lead, but you cannot upload files, edit summaries, or host rooms.</p>
+                  </section>
+                  <section>
+                    <h3 className="font-bold text-neutral-900 dark:text-neutral-100 mb-1">2. Room codes</h3>
+                    <p>Rooms are created by an Admin who shares a 6-digit room code with invited guests. Keep the code private to the people your host shared it with, and do not try codes you were not given. A host may end a room at any time, after which its files stop being available to guests.</p>
+                  </section>
+                  <section>
+                    <h3 className="font-bold text-neutral-900 dark:text-neutral-100 mb-1">3. Documents and AI summaries</h3>
+                    <p>Documents in a room are provided by the room host. AI summaries are generated automatically as a reading aid and may contain errors or leave out important detail. Always check the actual document for authoritative wording, especially for legislative or legal use.</p>
+                  </section>
+                  <section>
+                    <h3 className="font-bold text-neutral-900 dark:text-neutral-100 mb-1">4. Acceptable use</h3>
+                    <p>Use Guest mode only for lawful purposes. Do not attempt to access rooms you were not invited to, disrupt a room session, or redistribute room contents in ways your host has not allowed.</p>
+                  </section>
+                  <section>
+                    <h3 className="font-bold text-neutral-900 dark:text-neutral-100 mb-1">5. Privacy</h3>
+                    <p>EcoLegis does not ask guests to create an account. The app keeps a random guest identifier on your own device so features like Lead following work; it is not tied to your identity. Room contents remain the responsibility of the host who shared them.</p>
+                  </section>
+                </div>
+              </div>
+            </main>
+          ) : guestDrawerView === "about" ? (
+            <main id="guest-about-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8">
+              <div className="max-w-3xl mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm p-6 md:p-8">
+                <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">About EcoLegis</h2>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Legislative Document Management & AI Summary System</p>
+                <div className="mt-6 space-y-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+                  <p>EcoLegis helps people work with legislative documents: upload a PDF, read it with traced text you can inspect, and get an AI-generated summary broken down by page ranges — all in one place.</p>
+                  <h3 className="font-bold text-neutral-900 dark:text-neutral-100">What guests can do</h3>
+                  <ul className="list-disc pl-5 space-y-1.5">
+                    <li>Join a hosted room with a 6-digit room code.</li>
+                    <li>Read shared documents page by page, with traced text boxes you can tap to inspect.</li>
+                    <li>Read the saved AI summary next to the document, in Full or Per Page view.</li>
+                    <li>Follow the room Lead live as they walk through the files.</li>
+                    <li>Highlight any passage and ask the AI what it means in plain language.</li>
+                  </ul>
+                  <h3 className="font-bold text-neutral-900 dark:text-neutral-100">For hosts</h3>
+                  <p>Admins upload PDFs, generate AI summaries, and host rooms that bundle selected files under one code for their guests.</p>
+                </div>
+              </div>
+            </main>
           ) : (
-            <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center p-8">
-              <button
-                type="button"
-                onClick={() => { setJoinRoomError(null); setIsRoomCodeModalOpen(true); }}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
-                id="open-room-code-modal-btn"
-              >
-                <KeyRound className="w-4 h-4" />
-                <span>Enter Room Code</span>
-              </button>
+            <main id="guest-main" className="flex-1 w-full bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center p-8 overflow-y-auto">
+              <div className="text-center max-w-sm">
+                <div className="w-14 h-14 rounded-2xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 flex items-center justify-center mx-auto mb-4">
+                  <KeyRound className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">Join a room to begin</h2>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">Enter the 6-digit room code shared by your host to view their documents and AI summaries.</p>
+                <button
+                  type="button"
+                  onClick={() => { setJoinRoomError(null); setIsRoomCodeModalOpen(true); }}
+                  className="mt-5 inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+                  id="open-room-code-modal-btn"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>Join Room</span>
+                </button>
+              </div>
             </main>
           )}
           {isRoomCodeModalOpen && (
@@ -2158,7 +2311,8 @@ Explain in simple, everyday words what the highlighted text means in this specif
             </div>
           </div>
           )}
-        </>
+          </div>
+        </div>
       ) : appView === "files" ? (
         <main id="files-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="uploaded-files-panel">
@@ -3451,3 +3605,4 @@ Explain in simple, everyday words what the highlighted text means in this specif
     </div>
   );
 }
+

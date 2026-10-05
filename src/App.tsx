@@ -19,6 +19,8 @@ import {
   ChevronRight, 
   ChevronDown,
   Menu,
+  LogIn,
+  LogOut,
   FileCheck,
   Info,
   LayoutGrid,
@@ -346,6 +348,35 @@ export default function App() {
   const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState(false);
   const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState(false);
   const closeAdminDrawerOnMobile = () => { if (typeof window !== "undefined" && window.innerWidth < 768) setIsAdminDrawerOpen(false); };
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAdminLoggedIn) setProfileRole("Guest");
+  }, [isAdminLoggedIn]);
+
+  const openAdminLogin = () => { setLoginError(null); setIsLoginModalOpen(true); };
+  const handleAdminLogin = () => {
+    if (loginEmail === "Admin" && loginPassword === "Admin") {
+      setIsAdminLoggedIn(true);
+      setProfileRole("Admin");
+      setIsLoginModalOpen(false);
+      setLoginEmail("");
+      setLoginPassword("");
+      setLoginError(null);
+    } else {
+      setLoginError("Invalid email or password.");
+    }
+  };
+  const handleAdminLogout = () => {
+    setIsAdminLoggedIn(false);
+    setProfileRole("Guest");
+    setIsGuestDrawerOpen(false);
+    setIsAdminDrawerOpen(false);
+  };
   const [selectedRoomFilePaths, setSelectedRoomFilePaths] = useState<string[]>([]);
   const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);
   const [isHostingRoom, setIsHostingRoom] = useState(false);
@@ -1818,6 +1849,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
           >
             {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
+          {isAdminLoggedIn && (
           <div id="profile-switcher" className="flex items-center gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-800 rounded-full border border-neutral-200 dark:border-neutral-800">
             <span className="hidden sm:flex items-center gap-1.5 pl-2 pr-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
               <User className="w-3.5 h-3.5" />
@@ -1841,6 +1873,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
               ))}
             </div>
           </div>
+          )}
         </div>
       </header>
 
@@ -1933,8 +1966,29 @@ Explain in simple, everyday words what the highlighted text means in this specif
                 )}
               </div>
             </nav>
-            <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800">
+            <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
               <p className="text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">Guest access is read-only. Ask your host for a 6-digit room code to view their shared documents.</p>
+              {isAdminLoggedIn ? (
+                <button
+                  type="button"
+                  onClick={handleAdminLogout}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  id="admin-logout-btn"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Logout</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setIsGuestDrawerOpen(false); openAdminLogin(); }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+                  id="admin-login-btn"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Admin Login</span>
+                </button>
+              )}
             </div>
           </aside>
           <div className="flex-1 min-w-0 flex flex-col min-h-0" id="guest-content">
@@ -2321,7 +2375,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
               >
                 Close
               </button>
-              <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-3 text-center">Switch back to Admin in Profile to return.</p>
+              <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-3 text-center">{isAdminLoggedIn ? "Switch back to Admin in Profile to return." : "Ask your host for the 6-digit room code."}</p>
             </div>
           </div>
           )}
@@ -2408,8 +2462,17 @@ Explain in simple, everyday words what the highlighted text means in this specif
                 <span>History</span>
               </button>
             </nav>
-            <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800">
+            <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
               <p className="text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">Admin workspace — uploads are backed up to the repository's /uploaded folder.</p>
+              <button
+                type="button"
+                onClick={handleAdminLogout}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                id="admin-drawer-logout-btn"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </button>
             </div>
           </aside>
           <div className="flex-1 min-w-0 flex flex-col min-h-0" id="admin-content">
@@ -3471,6 +3534,74 @@ Explain in simple, everyday words what the highlighted text means in this specif
             )}
           </div>
         </div>
+      )}
+
+      {isLoginModalOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-4" id="admin-login-overlay">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-login-title"
+          className="relative w-full max-w-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6"
+          id="admin-login-modal"
+        >
+          <button
+            type="button"
+            onClick={() => setIsLoginModalOpen(false)}
+            className="absolute top-3 right-3 p-1.5 rounded-full text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+            aria-label="Close"
+            title="Close"
+            id="close-login-modal-btn"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <div className="w-11 h-11 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-300 mb-4">
+            <LogIn className="w-5 h-5" />
+          </div>
+          <h2 id="admin-login-title" className="text-base font-bold text-neutral-900 dark:text-neutral-100">Admin Login</h2>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Sign in to unlock Admin mode.</p>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleAdminLogin(); }}
+            className="mt-5"
+          >
+            <label htmlFor="admin-login-email" className="block text-xs font-semibold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider mb-2">
+              Email
+            </label>
+            <input
+              id="admin-login-email"
+              type="text"
+              autoComplete="username"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              placeholder="Admin"
+              className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100"
+            />
+            <label htmlFor="admin-login-password" className="block text-xs font-semibold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider mt-4 mb-2">
+              Password
+            </label>
+            <input
+              id="admin-login-password"
+              type="password"
+              autoComplete="current-password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="••••••"
+              className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100"
+            />
+            {loginError && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-3" id="admin-login-error">{loginError}</p>
+            )}
+            <button
+              type="submit"
+              className="mt-4 w-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg py-2.5 px-4 font-semibold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              id="admin-login-submit-btn"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Log In</span>
+            </button>
+          </form>
+        </div>
+      </div>
       )}
 
       {/* FOOTER */}

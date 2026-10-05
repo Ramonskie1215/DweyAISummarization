@@ -50,11 +50,11 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
   const blob = {
     configured: blobConfigured,
     ok: false,
-    message: blobConfigured ? "" : "BLOB_READ_WRITE_TOKEN is not set. Connect a Vercel Blob store, then redeploy.",
+    message: blobConfigured ? "" : "No Blob connection found. Connect a Vercel Blob store, then redeploy.",
   };
   if (blobConfigured) {
     try {
@@ -65,7 +65,7 @@ export default async function handler(req: any, res: any) {
         blob.message = "Blob storage reachable.";
       } else {
         blob.ok = true;
-        blob.message = "BLOB_READ_WRITE_TOKEN is set.";
+        blob.message = "Blob connection is set.";
       }
     } catch (error: any) {
       blob.message = `Blob check failed: ${error?.message || "reconnect the Blob store, then redeploy."}`;

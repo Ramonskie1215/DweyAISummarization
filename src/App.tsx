@@ -343,8 +343,8 @@ export default function App() {
   const [isRoomCodeModalOpen, setIsRoomCodeModalOpen] = useState(false);
   const [guestDrawerView, setGuestDrawerView] = useState<"join" | "terms" | "about">("join");
   const [guestAboutExpanded, setGuestAboutExpanded] = useState(false);
-  const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState<boolean>(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
-  const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState<boolean>(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
+  const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState(false);
+  const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState(false);
   const closeAdminDrawerOnMobile = () => { if (typeof window !== "undefined" && window.innerWidth < 768) setIsAdminDrawerOpen(false); };
   const [selectedRoomFilePaths, setSelectedRoomFilePaths] = useState<string[]>([]);
   const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);

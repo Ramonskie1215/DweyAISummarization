@@ -539,17 +539,30 @@ export default function App() {
     if (fileToBackup.size > 3_000_000) {
       (async () => {
         try {
-          const { upload } = await import("@vercel/blob/client");
-          const blob = await upload(`staging/${dateFolder}/${fileToBackup.name}`, fileToBackup, {
-            access: "public",
-            handleUploadUrl: "/api/blob-upload",
-            contentType: "application/pdf",
-            multipart: true,
-          });
+          const blobClient = await import("@vercel/blob/client");
+          const stagingPathname = `staging/${dateFolder}/${fileToBackup.name}`;
+          let blob;
+          try {
+            // Newer Blob connections (store ID/OIDC) use presigned staging.
+            blob = await blobClient.uploadPresigned(stagingPathname, fileToBackup, {
+              access: "private",
+              handleUploadUrl: "/api/blob-upload",
+              contentType: "application/pdf",
+              multipart: true,
+            });
+          } catch (_) {
+            // Classic read-write-token Blob stores use the client-token flow.
+            blob = await blobClient.upload(stagingPathname, fileToBackup, {
+              access: "public",
+              handleUploadUrl: "/api/blob-upload",
+              contentType: "application/pdf",
+              multipart: true,
+            });
+          }
           await fetch("/api/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: fileToBackup.name, blobUrl: blob.url, dateFolder }),
+            body: JSON.stringify({ filename: fileToBackup.name, blobPathname: blob.pathname, blobUrl: blob.url, dateFolder }),
           });
         } catch (err) {
           console.warn("Large-file backup copy failed:", err);

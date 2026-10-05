@@ -193,6 +193,74 @@ ${text}
     }
   });
 
+  // Backup readiness check for the Admin Uploaded Files view. It never returns
+  // secret values — only whether the required server settings are present and
+  // reachable — so large-PDF backup readiness can be confirmed before upload.
+  app.get("/api/backup-status", async (req, res) => {
+    const checkedAt = new Date().toISOString();
+    const ghOwner = process.env.GITHUB_OWNER || "Ramonskie1215";
+    const ghRepo = process.env.GITHUB_REPO || "DweyAISummarization";
+    const ghToken = process.env.GITHUB_TOKEN || "";
+    const github = {
+      configured: Boolean(ghToken),
+      ok: false,
+      message: ghToken ? "" : "GITHUB_TOKEN is not set.",
+    };
+    if (ghToken) {
+      try {
+        const ghRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}`, {
+          headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${ghToken}`,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "ecolegis-backup-status",
+          },
+        });
+        if (ghRes.ok) {
+          github.ok = true;
+          github.message = "Repo access OK.";
+        } else if (ghRes.status === 401 || ghRes.status === 403) {
+          github.message = "Repo access denied. Check GITHUB_TOKEN permissions.";
+        } else if (ghRes.status === 404) {
+          github.message = "Repo not found, or the token cannot see it.";
+        } else {
+          github.message = `Repo check failed (HTTP ${ghRes.status}).`;
+        }
+      } catch (_) {
+        github.message = "Repo check failed. Check GITHUB_TOKEN.";
+      }
+    }
+
+    const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    const blob = {
+      configured: blobConfigured,
+      ok: false,
+      message: blobConfigured ? "" : "BLOB_READ_WRITE_TOKEN is not set. Connect a Vercel Blob store, then redeploy.",
+    };
+    if (blobConfigured) {
+      try {
+        const blobModule: any = await import("@vercel/blob");
+        if (typeof blobModule.list === "function") {
+          await blobModule.list({ limit: 1 });
+          blob.ok = true;
+          blob.message = "Blob storage reachable.";
+        } else {
+          blob.ok = true;
+          blob.message = "BLOB_READ_WRITE_TOKEN is set.";
+        }
+      } catch (error: any) {
+        blob.message = `Blob check failed: ${error?.message || "reconnect the Blob store, then redeploy."}`;
+      }
+    }
+
+    return res.json({
+      ready: github.ok && blob.ok,
+      checkedAt,
+      github,
+      blob,
+    });
+  });
+
   // Issues short-lived tokens so the browser can upload large PDFs directly to
   // Vercel Blob storage (staging only; /api/upload copies the file into GitHub).
   app.post("/api/blob-upload", async (req, res) => {

@@ -27,7 +27,8 @@ import {
   User,
   KeyRound,
   Users,
-  History
+  History,
+  ShieldCheck
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
@@ -52,6 +53,19 @@ type RoomLead = {
   page?: number;
   updatedAt?: string | null;
   live?: boolean;
+};
+
+type BackupCheck = {
+  configured: boolean;
+  ok: boolean;
+  message: string;
+};
+
+type BackupStatus = {
+  ready: boolean;
+  github: BackupCheck;
+  blob: BackupCheck;
+  checkedAt?: string;
 };
 
 type SummaryRangeEntry = {
@@ -383,6 +397,23 @@ export default function App() {
   const [adminFiles, setAdminFiles] = useState<Array<{ name: string; size: number; path: string; uploadedAt?: string | null }>>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
+  const [backupStatusLoading, setBackupStatusLoading] = useState(false);
+  const [backupStatusError, setBackupStatusError] = useState<string | null>(null);
+  const backupReady = backupStatus?.ready === true;
+  const backupChecking = backupStatusLoading && !backupStatus;
+  const backupStatusTitle = backupStatusError
+    ? "Backup check failed"
+    : backupChecking
+      ? "Checking backup readiness"
+      : backupReady
+        ? "Backup ready"
+        : "Backup not fully ready";
+  const backupStatusDetail = backupStatusError
+    ? backupStatusError
+    : backupStatus
+      ? `${backupStatus.github.ok ? "GitHub copy OK" : `GitHub copy: ${backupStatus.github.message}`} · ${backupStatus.blob.ok ? "Large-file staging OK" : `Large-file staging: ${backupStatus.blob.message}`}`
+      : "Check whether GitHub copy and large-file staging are ready before uploading a big PDF.";
 
   // AI Summarization options and states
   const [summaryLength, setSummaryLength] = useState<"Short" | "Medium" | "Detailed">("Medium");
@@ -834,9 +865,28 @@ Explain in simple, everyday words what the highlighted text means in this specif
     }
   };
 
+  const fetchBackupStatus = async () => {
+    setBackupStatusLoading(true);
+    setBackupStatusError(null);
+    try {
+      const res = await fetch("/api/backup-status", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Server responded with status ${res.status}`);
+      }
+      setBackupStatus(data as BackupStatus);
+    } catch (err: any) {
+      console.error("Failed to check backup status:", err);
+      setBackupStatusError(err.message || "Could not check backup readiness.");
+    } finally {
+      setBackupStatusLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (appView === "files") {
       fetchAdminFiles();
+      fetchBackupStatus();
     }
   }, [appView]);
 
@@ -2142,6 +2192,45 @@ Explain in simple, everyday words what the highlighted text means in this specif
                   <span>Upload File</span>
                 </button>
               </div>
+            </div>
+
+            <div
+              id="backup-status-bar"
+              title={backupStatus?.checkedAt ? `Last checked ${new Date(backupStatus.checkedAt).toLocaleString()}` : undefined}
+              className={`px-5 py-3 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                backupStatusError
+                  ? "border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/20"
+                  : backupReady
+                    ? "border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/20"
+                    : backupChecking
+                      ? "border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950"
+                      : "border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20"
+              }`}
+            >
+              <div className="flex items-start gap-2.5 min-w-0">
+                <span
+                  className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${
+                    backupStatusError ? "bg-red-500" : backupReady ? "bg-emerald-500" : backupChecking ? "bg-neutral-400 animate-pulse" : "bg-amber-500"
+                  }`}
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-100">{backupStatusTitle}</p>
+                  <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400 break-words">
+                    {backupStatusDetail}
+                    {backupStatus?.checkedAt ? ` · Checked ${new Date(backupStatus.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={fetchBackupStatus}
+                disabled={backupStatusLoading}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50 transition-all shrink-0"
+                id="backup-status-test-btn"
+              >
+                {backupStatusLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                <span>{backupStatus ? "Retest" : "Run self-test"}</span>
+              </button>
             </div>
 
             {isSelectingRoomFiles && (

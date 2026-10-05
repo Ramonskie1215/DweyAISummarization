@@ -310,6 +310,7 @@ export default function App() {
   // "Ask AI what this means" layperson explanation for the highlighted text
   const [docExplainResult, setDocExplainResult] = useState<string | null>(null);
   const [docExplainLoading, setDocExplainLoading] = useState(false);
+  const [docExplainLang, setDocExplainLang] = useState<"en" | "tl">("en");
   const [docExplainError, setDocExplainError] = useState<string | null>(null);
   const [appView, setAppView] = useState<"files" | "upload">("files");
   const [profileRole, setProfileRole] = useState<"Admin" | "Guest">(() => {
@@ -391,6 +392,7 @@ export default function App() {
   // Guest "Ask AI what this means" explanation for the highlighted text
   const [guestExplainResult, setGuestExplainResult] = useState<string | null>(null);
   const [guestExplainLoading, setGuestExplainLoading] = useState(false);
+  const [guestExplainLang, setGuestExplainLang] = useState<"en" | "tl">("en");
   const [guestExplainError, setGuestExplainError] = useState<string | null>(null);
   const [guestClientId] = useState<string>(() => {
     const saved = localStorage.getItem("dwey-guest-id");
@@ -738,6 +740,7 @@ export default function App() {
 
 STRICT RULES — follow them exactly:
 - Reply with ONLY the explanation, in 2 to 4 short sentences.
+- Reply in ${language === "tl" ? "Tagalog" : "English"}.
 - Use simple, everyday words. Friendly tone, no jargon, no markdown formatting.
 - If the highlighted text has abbreviations or legal/technical terms, briefly say what they mean in plain language.
 - Explain what the text MEANS — do not just repeat the highlighted text back word-for-word.
@@ -772,18 +775,26 @@ Following the STRICT RULES above, explain what the highlighted text means in thi
     return explanation;
   };
 
-  const askDocExplain = async () => {
+  const askDocExplain = async (lang: "en" | "tl" = docExplainLang) => {
     if (!selectedDocText || docExplainLoading) return;
     setDocExplainLoading(true);
     setDocExplainError(null);
     setDocExplainResult(null);
     try {
-      const explanation = await askAiToExplain(selectedDocText, extractionResult?.text || "", summaryLanguage);
+      const explanation = await askAiToExplain(selectedDocText, extractionResult?.text || "", lang);
       setDocExplainResult(explanation);
     } catch (explainErr: any) {
       setDocExplainError(explainErr?.message || "Could not get an explanation. Please try again.");
     } finally {
       setDocExplainLoading(false);
+    }
+  };
+
+  const toggleDocExplainLang = () => {
+    const next = docExplainLang === "en" ? "tl" : "en";
+    setDocExplainLang(next);
+    if ((docExplainResult || docExplainError) && selectedDocText && !docExplainLoading) {
+      askDocExplain(next);
     }
   };
 
@@ -1665,19 +1676,27 @@ Following the STRICT RULES above, explain what the highlighted text means in thi
     setTimeout(() => setGuestCopiedSelection(false), 2000);
   };
 
-  const askGuestExplain = async () => {
+  const askGuestExplain = async (lang: "en" | "tl" = guestExplainLang) => {
     if (!selectedGuestText || guestExplainLoading) return;
     setGuestExplainLoading(true);
     setGuestExplainError(null);
     setGuestExplainResult(null);
     try {
       const context = guestSummary || guestDocResult?.text || "";
-      const explanation = await askAiToExplain(selectedGuestText, context, "en");
+      const explanation = await askAiToExplain(selectedGuestText, context, lang);
       setGuestExplainResult(explanation);
     } catch (explainErr: any) {
       setGuestExplainError(explainErr?.message || "Could not get an explanation. Please try again.");
     } finally {
       setGuestExplainLoading(false);
+    }
+  };
+
+  const toggleGuestExplainLang = () => {
+    const next = guestExplainLang === "en" ? "tl" : "en";
+    setGuestExplainLang(next);
+    if ((guestExplainResult || guestExplainError) && selectedGuestText && !guestExplainLoading) {
+      askGuestExplain(next);
     }
   };
 
@@ -2071,6 +2090,14 @@ Following the STRICT RULES above, explain what the highlighted text means in thi
                                       </span>
                                       <button
                                         type="button"
+                                        onClick={toggleGuestExplainLang}
+                                        title={guestExplainLang === "en" ? "Answer in Tagalog" : "Answer in English"}
+                                        className="shrink-0 px-1.5 py-0.5 rounded-md border border-neutral-300 dark:border-neutral-700 text-[10px] font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                                      >
+                                        {guestExplainLang === "en" ? "EN" : "TG"}
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={() => { setGuestExplainResult(null); setGuestExplainError(null); }}
                                         className="shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                                         title="Close"
@@ -2082,14 +2109,25 @@ Following the STRICT RULES above, explain what the highlighted text means in thi
                                   </div>
                                 ) : (
                                   <div>
-                                    <button
-                                      type="button"
-                                      onClick={askGuestExplain}
-                                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
-                                    >
-                                      <Sparkles className="w-3.5 h-3.5" />
-                                      Ask AI what this means
-                                    </button>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => askGuestExplain()}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+                                      >
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        Ask AI what this means
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={toggleGuestExplainLang}
+                                        title={guestExplainLang === "en" ? "Answer in Tagalog" : "Answer in English"}
+                                        className="shrink-0 px-2 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 text-[11px] font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                                        id="guest-explain-lang-btn"
+                                      >
+                                        {guestExplainLang === "en" ? "EN" : "TG"}
+                                      </button>
+                                    </div>
                                     {guestExplainError && <p className="text-[11px] text-red-500 mt-2 leading-snug">{guestExplainError}</p>}
                                   </div>
                                 )}
@@ -3435,6 +3473,14 @@ Following the STRICT RULES above, explain what the highlighted text means in thi
                                             </span>
                                             <button
                                               type="button"
+                                              onClick={toggleDocExplainLang}
+                                              title={docExplainLang === "en" ? "Answer in Tagalog" : "Answer in English"}
+                                              className="shrink-0 px-1.5 py-0.5 rounded-md border border-neutral-300 dark:border-neutral-700 text-[10px] font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                                            >
+                                              {docExplainLang === "en" ? "EN" : "TG"}
+                                            </button>
+                                            <button
+                                              type="button"
                                               onClick={() => { setDocExplainResult(null); setDocExplainError(null); }}
                                               className="shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                                               title="Close"
@@ -3446,14 +3492,25 @@ Following the STRICT RULES above, explain what the highlighted text means in thi
                                         </div>
                                       ) : (
                                         <div>
-                                          <button
-                                            type="button"
-                                            onClick={askDocExplain}
-                                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
-                                          >
-                                            <Sparkles className="w-3.5 h-3.5" />
-                                            Ask AI what this means
-                                          </button>
+                                          <div className="flex items-center gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => askDocExplain()}
+                                              className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+                                            >
+                                              <Sparkles className="w-3.5 h-3.5" />
+                                              Ask AI what this means
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={toggleDocExplainLang}
+                                              title={docExplainLang === "en" ? "Answer in Tagalog" : "Answer in English"}
+                                              className="shrink-0 px-2 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 text-[11px] font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                                              id="doc-explain-lang-btn"
+                                            >
+                                              {docExplainLang === "en" ? "EN" : "TG"}
+                                            </button>
+                                          </div>
                                           {docExplainError && <p className="text-[11px] text-red-500 mt-2 leading-snug">{docExplainError}</p>}
                                         </div>
                                       )}

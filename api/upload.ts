@@ -1,5 +1,5 @@
 
-import { del } from "@vercel/blob";
+import { del, get } from "@vercel/blob";
 
 // Large staged uploads can take a while to copy into GitHub; give the
 // function room beyond the default timeout.
@@ -11,6 +11,20 @@ function getDateFolder(input?: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const get = (t: string) => parts.find((x) => x.type === t)?.value || "";
   return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+async function readStagedBlob(pathname: string): Promise<Buffer | null> {
+  for (const access of ["private", "public"] as const) {
+    try {
+      const result = await get(pathname, { access });
+      if (result && result.stream) {
+        return Buffer.from(await new Response(result.stream as any).arrayBuffer());
+      }
+    } catch (_) {
+      // Try the next access mode.
+    }
+  }
+  return null;
 }
 
 async function listUploadedFiles(ghOwner: string, ghRepo: string, ghHeaders: Record<string, string>) {
@@ -102,12 +116,23 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { filename, content, blobUrl, dateFolder } = req.body || {};
+    const { filename, content, blobUrl, blobPathname, dateFolder } = req.body || {};
     let base64Content = typeof content === "string" ? content : "";
-    if (blobUrl) {
-      // Large-file path: the browser staged the PDF in Vercel Blob (uploads go
-      // straight to storage, bypassing the 4.5 MB function body limit); fetch
-      // it here server-to-server, then fall through to the same GitHub commit.
+    const stagedBlobRef = blobPathname || blobUrl || "";
+    if (blobPathname) {
+      // Large-file path (new Blob connection): the browser staged the PDF in
+      // Vercel Blob; read it with the Blob SDK, then fall through to the same
+      // GitHub commit.
+      const stagedBuffer = await readStagedBlob(String(blobPathname));
+      if (stagedBuffer) {
+        base64Content = stagedBuffer.toString("base64");
+      } else if (!blobUrl) {
+        return res.status(502).json({ error: "Could not read the staged upload." });
+      }
+    }
+    if (!base64Content && blobUrl) {
+      // Large-file path (classic public Blob URL): fetch it server-to-server,
+      // then fall through to the same GitHub commit.
       let blobHost = "";
       try { blobHost = new URL(String(blobUrl)).hostname; } catch (_) { blobHost = ""; }
       if (!blobHost.endsWith(".blob.vercel-storage.com")) {
@@ -166,8 +191,8 @@ export default async function handler(req: any, res: any) {
     }
 
     const putData = await putRes.json();
-    if (blobUrl) {
-      try { await del(String(blobUrl)); } catch (_) { /* staging cleanup is best-effort */ }
+    if (stagedBlobRef) {
+      try { await del(String(stagedBlobRef)); } catch (_) { /* staging cleanup is best-effort */ }
     }
     return res.status(200).json({ ok: true, path: repoPath, commit: putData.commit?.sha });
   } catch (error: any) {

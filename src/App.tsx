@@ -344,6 +344,8 @@ export default function App() {
   const [guestDrawerView, setGuestDrawerView] = useState<"join" | "terms" | "about">("join");
   const [guestAboutExpanded, setGuestAboutExpanded] = useState(false);
   const [isGuestDrawerOpen, setIsGuestDrawerOpen] = useState<boolean>(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
+  const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState<boolean>(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
+  const closeAdminDrawerOnMobile = () => { if (typeof window !== "undefined" && window.innerWidth < 768) setIsAdminDrawerOpen(false); };
   const [selectedRoomFilePaths, setSelectedRoomFilePaths] = useState<string[]>([]);
   const [isSelectingRoomFiles, setIsSelectingRoomFiles] = useState(false);
   const [isHostingRoom, setIsHostingRoom] = useState(false);
@@ -2324,7 +2326,105 @@ Explain in simple, everyday words what the highlighted text means in this specif
           )}
           </div>
         </div>
-      ) : appView === "files" ? (
+      ) : (
+        <div className="flex flex-1 min-h-0 relative" id="admin-layout">
+          {!isAdminDrawerOpen && (
+            <button
+              type="button"
+              onClick={() => setIsAdminDrawerOpen(true)}
+              className="hidden md:flex absolute top-3 left-3 z-20 p-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 shadow-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+              aria-label="Open menu"
+              id="admin-drawer-reopen-btn"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+          {isAdminDrawerOpen && (
+            <div
+              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              onClick={() => setIsAdminDrawerOpen(false)}
+              id="admin-drawer-backdrop"
+            />
+          )}
+          <aside
+            id="admin-drawer"
+            className={`fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col shadow-xl md:shadow-none ${isAdminDrawerOpen ? "flex" : "hidden"}`}
+          >
+            <div className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h1 className="text-lg font-bold tracking-tight text-neutral-900 dark:text-neutral-100">EcoLegis</h1>
+                  <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 mt-1">Legislative Document Management & AI Summary System</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAdminDrawerOpen(false)}
+                  className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  aria-label="Close menu"
+                  id="admin-drawer-close-btn"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Admin menu">
+              <button
+                type="button"
+                onClick={() => { setAppView("files"); closeAdminDrawerOnMobile(); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${appView === "files" ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900" : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+                id="admin-drawer-files-btn"
+              >
+                <FolderOpen className="w-4 h-4" />
+                <span>Uploaded Files</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { openUploadModal(); closeAdminDrawerOnMobile(); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                id="open-upload-ui-btn"
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span>Upload File</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { startHostingRoom(); closeAdminDrawerOnMobile(); }}
+                disabled={adminLoading || adminFiles.length === 0}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                id="host-room-btn"
+              >
+                <Users className="w-4 h-4" />
+                <span>Host Room</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { openRoomHistory(); closeAdminDrawerOnMobile(); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                id="room-history-btn"
+              >
+                <History className="w-4 h-4" />
+                <span>History</span>
+              </button>
+            </nav>
+            <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800">
+              <p className="text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">Admin workspace — uploads are backed up to the repository's /uploaded folder.</p>
+            </div>
+          </aside>
+          <div className="flex-1 min-w-0 flex flex-col min-h-0" id="admin-content">
+            <div className="md:hidden flex items-center gap-2 px-3 py-2.5 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsAdminDrawerOpen(true)}
+                className="p-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Open menu"
+                id="admin-drawer-open-btn"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <span className="text-sm font-bold text-neutral-900 dark:text-neutral-100">EcoLegis</span>
+              <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Admin</span>
+            </div>
+            {appView === "files" ? (
         <main id="files-main" className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm flex flex-col flex-1 overflow-hidden" id="uploaded-files-panel">
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
@@ -2343,31 +2443,6 @@ Explain in simple, everyday words what the highlighted text means in this specif
                   title="Refresh file list"
                 >
                   <RefreshCw className={`w-4 h-4 ${adminLoading ? "animate-spin" : ""}`} />
-                </button>
-                <button
-                  onClick={startHostingRoom}
-                  disabled={adminLoading || adminFiles.length === 0}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-all"
-                  id="host-room-btn"
-                >
-                  <Users className="w-4 h-4" />
-                  <span>Host Room</span>
-                </button>
-                <button
-                  onClick={openRoomHistory}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all"
-                  id="room-history-btn"
-                >
-                  <History className="w-4 h-4" />
-                  <span>History</span>
-                </button>
-                <button
-                  onClick={openUploadModal}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-opacity"
-                  id="open-upload-ui-btn"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Upload File</span>
                 </button>
               </div>
             </div>
@@ -2548,7 +2623,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
             </div>
           </div>
         </main>
-      ) : (
+            ) : (
       <main id="app-main-content" className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* LEFT COLUMN: UPLOAD & CONTROLS (12 columns on mobile, 5 on lg) */}
@@ -3391,6 +3466,9 @@ Explain in simple, everyday words what the highlighted text means in this specif
           </div>
         </div>
       </main>
+            )}
+          </div>
+        </div>
       )}
 
       {/* FOOTER */}

@@ -1860,14 +1860,15 @@ Explain in simple, everyday words what the highlighted text means in this specif
           )}
           {isGuestDrawerOpen && (
             <div
-              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              className="fixed inset-0 z-30 bg-black/40"
               onClick={() => setIsGuestDrawerOpen(false)}
               id="guest-drawer-backdrop"
             />
           )}
           <aside
             id="guest-drawer"
-            className={`fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col shadow-xl md:shadow-none ${isGuestDrawerOpen ? "flex" : "hidden"}`}
+            aria-hidden={!isGuestDrawerOpen}
+            className={`fixed inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex flex-col shadow-xl transform transition-transform duration-200 ease-in-out ${isGuestDrawerOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"}`}
           >
             <div className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
               <div className="flex items-start justify-between gap-2">
@@ -1889,7 +1890,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
             <nav className="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Guest menu">
               <button
                 type="button"
-                onClick={() => { setGuestDrawerView("join"); setJoinRoomError(null); setIsRoomCodeModalOpen(true); setIsGuestDrawerOpen(false); }}
+                onClick={() => { if (guestDrawerView === "join" && !guestRoom && !selectedGuestFile) { setIsGuestDrawerOpen(false); return; } setGuestDrawerView("join"); setJoinRoomError(null); setIsRoomCodeModalOpen(true); setIsGuestDrawerOpen(false); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${guestDrawerView === "join" && !guestRoom ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900" : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
                 id="guest-drawer-join-room-btn"
               >
@@ -1912,7 +1913,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
                   <div className="mt-1 ml-4 pl-2 border-l border-neutral-200 dark:border-neutral-700 space-y-1">
                     <button
                       type="button"
-                      onClick={() => { setGuestDrawerView("terms"); setIsGuestDrawerOpen(false); }}
+                      onClick={() => { if (guestDrawerView === "terms" && !guestRoom && !selectedGuestFile) { setIsGuestDrawerOpen(false); return; } setGuestDrawerView("terms"); setIsGuestDrawerOpen(false); }}
                       className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${guestDrawerView === "terms" ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
                       id="guest-drawer-terms-btn"
                     >
@@ -1921,7 +1922,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setGuestDrawerView("about"); setIsGuestDrawerOpen(false); }}
+                      onClick={() => { if (guestDrawerView === "about" && !guestRoom && !selectedGuestFile) { setIsGuestDrawerOpen(false); return; } setGuestDrawerView("about"); setIsGuestDrawerOpen(false); }}
                       className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${guestDrawerView === "about" ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
                       id="guest-drawer-about-page-btn"
                     >
@@ -2341,14 +2342,15 @@ Explain in simple, everyday words what the highlighted text means in this specif
           )}
           {isAdminDrawerOpen && (
             <div
-              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              className="fixed inset-0 z-30 bg-black/40"
               onClick={() => setIsAdminDrawerOpen(false)}
               id="admin-drawer-backdrop"
             />
           )}
           <aside
             id="admin-drawer"
-            className={`fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col shadow-xl md:shadow-none ${isAdminDrawerOpen ? "flex" : "hidden"}`}
+            aria-hidden={!isAdminDrawerOpen}
+            className={`fixed inset-y-0 left-0 z-40 w-64 shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex flex-col shadow-xl transform transition-transform duration-200 ease-in-out ${isAdminDrawerOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"}`}
           >
             <div className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
               <div className="flex items-start justify-between gap-2">
@@ -2370,7 +2372,7 @@ Explain in simple, everyday words what the highlighted text means in this specif
             <nav className="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Admin menu">
               <button
                 type="button"
-                onClick={() => { setAppView("files"); closeAdminDrawerOnMobile(); }}
+                onClick={() => { if (appView === "files") { setIsAdminDrawerOpen(false); return; } setAppView("files"); closeAdminDrawerOnMobile(); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${appView === "files" ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900" : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
                 id="admin-drawer-files-btn"
               >

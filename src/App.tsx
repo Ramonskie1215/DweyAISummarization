@@ -82,64 +82,39 @@ type SummaryRangeEntry = {
 // Picks where the "Ask AI what this means" popover should sit: as close as
 // possible to the highlighted range, but in the nearest open area so it does
 // not cover other traced boxes the user may still want to double-click.
-function computeAskAiPlacement(
+// Stacked Ask-AI placement: after the first double-click the popover sits
+// directly above the double-clicked word, so it never covers the text below
+// that the user may double-click next. Once the second double-click completes
+// a range (or while the AI answer loads/shows), it sits below the last
+// double-clicked word instead.
+function computeAskAiStacked(
   items: Array<{ x: number; y: number; width: number; height: number }>,
-  lo: number,
-  hi: number,
+  wordIdx: number,
+  place: "above" | "below",
   scale: number,
   sheetW: number,
   sheetH: number,
   popW: number,
   popH: number
 ): { x: number; y: number } {
-  const rects = items.map((it) => ({
-    x: it.x * scale,
-    y: it.y * scale,
-    w: Math.max(it.width * scale, 4),
-    h: Math.max(it.height * scale, 6),
-  }));
-  const selItems = rects.slice(lo, hi + 1);
-  if (!selItems.length) return { x: 8, y: 8 };
-  const selX = Math.min(...selItems.map((r) => r.x));
-  const selY = Math.min(...selItems.map((r) => r.y));
-  const selRight = Math.max(...selItems.map((r) => r.x + r.w));
-  const selBottom = Math.max(...selItems.map((r) => r.y + r.h));
-  const gap = 8;
-  const clampX = (v: number) => Math.min(Math.max(v, gap), Math.max(gap, sheetW - popW - gap));
-  const clampY = (v: number) => Math.min(Math.max(v, gap), Math.max(gap, sheetH - popH - gap));
-  const candidates = [
-    { x: selX, y: selBottom + gap }, // below, left-aligned
-    { x: selRight - popW, y: selBottom + gap }, // below, right-aligned
-    { x: selX, y: selY - popH - gap }, // above, left-aligned
-    { x: selRight - popW, y: selY - popH - gap }, // above, right-aligned
-    { x: selRight + gap, y: selY }, // right of the selection
-    { x: selX - popW - gap, y: selY }, // left of the selection
-    { x: selRight + gap, y: selBottom - popH }, // right, bottom-aligned
-    { x: selX - popW - gap, y: selBottom - popH }, // left, bottom-aligned
-  ].map((c) => ({ x: clampX(c.x), y: clampY(c.y) }));
-  const overlapArea = (
-    a: { x: number; y: number; w: number; h: number },
-    b: { x: number; y: number; w: number; h: number }
-  ) =>
-    Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
-    Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
-  let best = candidates[0];
-  let bestScore = Infinity;
-  candidates.forEach((c, order) => {
-    const pop = { x: c.x, y: c.y, w: popW, h: popH };
-    // Mild preference for below/above spots, then for spots nearer the selection
-    let score = order * 10 + Math.hypot(c.x - selX, c.y - selBottom) * 0.02;
-    rects.forEach((r, idx) => {
-      const o = overlapArea(pop, r);
-      // Covering an unselected box is the real problem; the selected ones matter less
-      if (o > 0) score += idx >= lo && idx <= hi ? o * 0.25 : o;
-    });
-    if (score < bestScore) {
-      bestScore = score;
-      best = c;
-    }
-  });
-  return best;
+  const margin = 8;
+  const word = items[wordIdx];
+  if (!word) return { x: margin, y: margin };
+  const wx = word.x * scale;
+  const wy = word.y * scale;
+  const wh = Math.max(word.height * scale, 6);
+  const clampX = (v: number) => Math.min(Math.max(v, margin), Math.max(margin, sheetW - popW - margin));
+  const x = clampX(wx);
+  let y: number;
+  if (place === "above") {
+    y = wy - popH - margin;
+    if (y < margin) y = wy + wh + margin; // no room above: fall back below
+  } else {
+    y = wy + wh + margin;
+    if (y + popH > sheetH - margin) y = wy - popH - margin; // no room below: fall back above
+  }
+  y = Math.min(Math.max(y, margin), Math.max(margin, sheetH - popH - margin));
+  return { x, y };
 }
 
 function matchSummaryRangeStart(line: string): { start: number; end: number; title: string; rest: string } | null {
@@ -2050,8 +2025,10 @@ Explain in simple, everyday words what the highlighted text means in this specif
                         const renderHeight = renderWidth / (pageLayout.width / pageLayout.height);
                         const scale = renderWidth / pageLayout.width;
                         const guestAskAiPopW = guestExplainResult ? 264 : 196;
-                        const guestAskAiPos = guestSelLo !== null && guestSelHi !== null
-                          ? computeAskAiPlacement(pageLayout.items, guestSelLo, guestSelHi, scale, renderWidth, renderHeight, guestAskAiPopW, guestExplainResult ? 176 : 56)
+                        const guestAskAiPopH = guestExplainResult || guestExplainLoading ? 176 : 56;
+                        const guestAskAiBelow = guestExplainResult || guestExplainLoading || (guestSelectionAnchor !== null && guestSelectionEnd !== null && guestSelectionAnchor !== guestSelectionEnd);
+                        const guestAskAiPos = guestSelectionEnd !== null
+                          ? computeAskAiStacked(pageLayout.items, guestSelectionEnd, guestAskAiBelow ? "below" : "above", scale, renderWidth, renderHeight, guestAskAiPopW, guestAskAiPopH)
                           : { x: 8, y: 8 };
                         return (
                           <div className="relative bg-white shadow-md rounded overflow-hidden mx-auto cursor-pointer" style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }} id="guest-actual-document-sheet" onClick={() => setGuestShowTraces((prev) => !prev)} title={guestShowTraces ? "Tap an open area to hide the traced text" : "Tap an open area to show the traced text"}>
@@ -3379,8 +3356,10 @@ Explain in simple, everyday words what the highlighted text means in this specif
                               const renderHeight = renderWidth / widthToHeightRatio;
                               const scale = renderWidth / pageLayout.width;
                               const docAskAiPopW = docExplainResult ? 264 : 196;
-                              const docAskAiPos = docSelLo !== null && docSelHi !== null
-                                ? computeAskAiPlacement(pageLayout.items, docSelLo, docSelHi, scale, renderWidth, renderHeight, docAskAiPopW, docExplainResult ? 176 : 56)
+                              const docAskAiPopH = docExplainResult || docExplainLoading ? 176 : 56;
+                              const docAskAiBelow = docExplainResult || docExplainLoading || (docSelectionAnchor !== null && docSelectionEnd !== null && docSelectionAnchor !== docSelectionEnd);
+                              const docAskAiPos = docSelectionEnd !== null
+                                ? computeAskAiStacked(pageLayout.items, docSelectionEnd, docAskAiBelow ? "below" : "above", scale, renderWidth, renderHeight, docAskAiPopW, docAskAiPopH)
                                 : { x: 8, y: 8 };
 
                               return (

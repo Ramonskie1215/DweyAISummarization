@@ -3,8 +3,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { del } from "@vercel/blob";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { del, get, issueSignedToken } from "@vercel/blob";
+import { handleUpload, handleUploadPresigned, type HandleUploadBody, type HandleUploadPresignedBody } from "@vercel/blob/client";
 
 dotenv.config();
 
@@ -193,6 +193,20 @@ ${text}
     }
   });
 
+  const readStagedBlob = async (pathname: string): Promise<Buffer | null> => {
+    for (const access of ["private", "public"] as const) {
+      try {
+        const result = await get(pathname, { access });
+        if (result && result.stream) {
+          return Buffer.from(await new Response(result.stream as any).arrayBuffer());
+        }
+      } catch (_) {
+        // Try the next access mode.
+      }
+    }
+    return null;
+  };
+
   // Backup readiness check for the Admin Uploaded Files view. It never returns
   // secret values — only whether the required server settings are present and
   // reachable — so large-PDF backup readiness can be confirmed before upload.
@@ -231,11 +245,11 @@ ${text}
       }
     }
 
-    const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
     const blob = {
       configured: blobConfigured,
       ok: false,
-      message: blobConfigured ? "" : "BLOB_READ_WRITE_TOKEN is not set. Connect a Vercel Blob store, then redeploy.",
+      message: blobConfigured ? "" : "No Blob connection found. Connect a Vercel Blob store, then redeploy.",
     };
     if (blobConfigured) {
       try {
@@ -246,7 +260,7 @@ ${text}
           blob.message = "Blob storage reachable.";
         } else {
           blob.ok = true;
-          blob.message = "BLOB_READ_WRITE_TOKEN is set.";
+          blob.message = "Blob connection is set.";
         }
       } catch (error: any) {
         blob.message = `Blob check failed: ${error?.message || "reconnect the Blob store, then redeploy."}`;
@@ -261,10 +275,30 @@ ${text}
     });
   });
 
-  // Issues short-lived tokens so the browser can upload large PDFs directly to
-  // Vercel Blob storage (staging only; /api/upload copies the file into GitHub).
+  // Issues short-lived upload permissions so the browser can upload large PDFs
+  // directly to Vercel Blob storage (staging only; /api/upload copies the file
+  // into GitHub). Supports both newer store-ID/OIDC connections via presigned
+  // URLs and classic read-write-token connections.
   app.post("/api/blob-upload", async (req, res) => {
     try {
+      if ((req.body as any)?.type === "blob.generate-presigned-url") {
+        const jsonResponse = await handleUploadPresigned({
+          body: req.body as HandleUploadPresignedBody,
+          request: req as any,
+          getSignedToken: async (pathname) => {
+            const token = await issueSignedToken({
+              pathname,
+              operations: ["put"],
+              allowedContentTypes: ["application/pdf"],
+              maximumSizeInBytes: 100 * 1024 * 1024,
+              validUntil: Date.now() + 10 * 60 * 1000,
+            });
+            return { token, urlOptions: { addRandomSuffix: true } };
+          },
+        });
+        return res.json(jsonResponse);
+      }
+
       const jsonResponse = await handleUpload({
         body: req.body as HandleUploadBody,
         request: req as any,
@@ -287,11 +321,22 @@ ${text}
   // Backup endpoint: commits a copy of an uploaded PDF to the repo's /uploaded folder via the GitHub API
   app.post("/api/upload", async (req, res) => {
     try {
-      const { filename, blobUrl, dateFolder } = req.body || {};
+      const { filename, blobUrl, blobPathname, dateFolder } = req.body || {};
       let { content } = req.body || {};
-      if (blobUrl) {
-        // Large-file path: the browser staged the PDF in Vercel Blob (direct-to-storage
-        // uploads bypass Vercel's 4.5 MB function body limit); fetch it here
+      const stagedBlobRef = blobPathname || blobUrl || "";
+      if (blobPathname) {
+        // Large-file path (new Blob connection): the browser staged the PDF in
+        // Vercel Blob; read it with the Blob SDK, then fall through to the
+        // same GitHub commit.
+        const stagedBuffer = await readStagedBlob(String(blobPathname));
+        if (stagedBuffer) {
+          content = stagedBuffer.toString("base64");
+        } else if (!blobUrl) {
+          return res.status(502).json({ error: "Could not read the staged upload." });
+        }
+      }
+      if (!content && blobUrl) {
+        // Large-file path (classic public Blob URL): fetch it here
         // server-to-server, then fall through to the same GitHub commit.
         let blobHost = "";
         try { blobHost = new URL(String(blobUrl)).hostname; } catch (_) { blobHost = ""; }
@@ -351,8 +396,8 @@ ${text}
       }
 
       const putData = await putRes.json();
-      if (blobUrl) {
-        try { await del(String(blobUrl)); } catch (_) { /* staging cleanup is best-effort */ }
+      if (stagedBlobRef) {
+        try { await del(String(stagedBlobRef)); } catch (_) { /* staging cleanup is best-effort */ }
       }
       return res.json({ ok: true, path: repoPath, commit: putData.commit?.sha });
     } catch (error: any) {

@@ -218,16 +218,7 @@
       "createdAt": "2026-10-06T01:59:22.053Z",
       "startedAt": "2026-10-06T01:59:22.053Z",
       "endedAt": null,
-      "lead": {
-        "id": "guest-xcg9j72a-murrf76s",
-        "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-02/img20260929_14395173.pdf",
-        "fileName": "img20260929_14395173.pdf",
-        "page": 1,
-        "updatedAt": "2026-10-06T02:02:02.035Z",
-        "live": true
-      }
+      "lead": null
     }
   ]
 }

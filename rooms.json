@@ -248,16 +248,7 @@
       "createdAt": "2026-10-06T06:09:26.433Z",
       "startedAt": "2026-10-06T06:09:26.433Z",
       "endedAt": null,
-      "lead": {
-        "id": "guest-nrbsk2ey-muw2f0fy",
-        "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-05/3-ULAT-NG-LUPON-NO.-56-2026.pdf",
-        "fileName": "3-ULAT-NG-LUPON-NO.-56-2026.pdf",
-        "page": 2,
-        "updatedAt": "2026-10-06T06:11:43.191Z",
-        "live": true
-      }
+      "lead": null
     }
   ]
 }

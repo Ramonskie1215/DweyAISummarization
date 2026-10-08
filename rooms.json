@@ -347,7 +347,16 @@
       "createdAt": "2026-10-08T08:40:10.438Z",
       "startedAt": "2026-10-08T08:40:10.438Z",
       "endedAt": null,
-      "lead": null
+      "lead": {
+        "id": "guest-jxdbjrwr-muz9dpba",
+        "name": "Guest",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-08T08:42:07.443Z",
+        "live": true
+      }
     }
   ]
 }

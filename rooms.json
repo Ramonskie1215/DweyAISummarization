@@ -416,7 +416,16 @@
       "createdAt": "2026-10-08T09:53:13.328Z",
       "startedAt": "2026-10-08T09:53:13.328Z",
       "endedAt": null,
-      "lead": null
+      "lead": {
+        "id": "guest-2xtcyhzx-muzcilvm",
+        "name": "Guest",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-08T09:58:23.067Z",
+        "live": true
+      }
     },
     {
       "code": "489526",

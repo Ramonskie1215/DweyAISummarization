@@ -312,6 +312,27 @@
       "startedAt": "2026-10-08T08:36:15.369Z",
       "endedAt": null,
       "lead": null
+    },
+    {
+      "code": "674304",
+      "files": [
+        {
+          "name": "5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+          "path": "uploaded/2026-10-03/5-PROPOSED-CITY-RESOLUTION-NO.-190-2026.pdf",
+          "size": 1376279,
+          "uploadedAt": "2026-10-03T02:17:25Z"
+        },
+        {
+          "name": "img20260929_14395173.pdf",
+          "path": "uploaded/2026-10-02/img20260929_14395173.pdf",
+          "size": 3270694,
+          "uploadedAt": "2026-10-02T14:52:56Z"
+        }
+      ],
+      "createdAt": "2026-10-08T08:36:29.677Z",
+      "startedAt": "2026-10-08T08:36:29.677Z",
+      "endedAt": null,
+      "lead": null
     }
   ]
 }

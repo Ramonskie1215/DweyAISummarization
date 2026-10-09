@@ -473,16 +473,7 @@
       "createdAt": "2026-10-09T03:40:40.887Z",
       "startedAt": "2026-10-09T03:40:40.887Z",
       "endedAt": null,
-      "lead": {
-        "id": "guest-2xtcyhzx-muzcilvm",
-        "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-09/2-SK-BUDGET-FOR-2026-BRGY.-CATMON.pdf",
-        "fileName": "2-SK-BUDGET-FOR-2026-BRGY.-CATMON.pdf",
-        "page": 1,
-        "updatedAt": "2026-10-09T03:52:12.695Z",
-        "live": true
-      }
+      "lead": null
     }
   ]
 }

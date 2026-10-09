@@ -473,7 +473,16 @@
       "createdAt": "2026-10-09T03:40:40.887Z",
       "startedAt": "2026-10-09T03:40:40.887Z",
       "endedAt": null,
-      "lead": null
+      "lead": {
+        "id": "guest-2xtcyhzx-muzcilvm",
+        "name": "Guest",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-09T03:51:39.010Z",
+        "live": true
+      }
     }
   ]
 }

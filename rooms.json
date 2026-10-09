@@ -476,11 +476,11 @@
       "lead": {
         "id": "guest-2xtcyhzx-muzcilvm",
         "name": "Guest",
-        "view": "document",
-        "filePath": "uploaded/2026-10-09/2-SK-BUDGET-FOR-2026-BRGY.-CATMON.pdf",
-        "fileName": "2-SK-BUDGET-FOR-2026-BRGY.-CATMON.pdf",
-        "page": 2,
-        "updatedAt": "2026-10-09T03:56:25.666Z",
+        "view": "files",
+        "filePath": null,
+        "fileName": null,
+        "page": 1,
+        "updatedAt": "2026-10-09T03:57:21.022Z",
         "live": true
       }
     }
